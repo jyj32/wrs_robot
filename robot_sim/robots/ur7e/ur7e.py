@@ -1,0 +1,363 @@
+import os
+import math
+from typing import Literal
+
+import numpy as np
+import modeling.collision_model as cm
+import modeling.model_collection as mc
+import robot_sim._kinematics.jlchain as jl
+import robot_sim.manipulators.ur7e.ur7e as rbt
+import robot_sim.end_effectors.gripper.dh50.dh50 as hnd
+import robot_sim.robots.robot_interface as ri
+from panda3d.core import CollisionNode, CollisionBox, Point3
+import copy
+import modeling.geometric_model as gm
+import robot_sim.manipulators.machinetool.machinetool_gripper as machine
+import basis.robot_math as rm
+# from ikfast.ikfast import UrIkFast
+from trac_ik import TracIK
+
+
+class UR7E(ri.RobotInterface):
+
+    def __init__(self, pos=np.zeros(3), rotmat=np.eye(3), name="ur7e", enable_cc=True):
+        super().__init__(pos=pos, rotmat=rotmat, name=name)
+        this_dir, this_filename = os.path.split(__file__)
+        # arm
+        self.arm_homeconf = np.array([np.pi / 2, -np.pi / 2, np.pi / 2, -np.pi / 2, -np.pi / 2, np.pi]) # 初始关节点
+        self.arm = rbt.UR7E(pos=pos,
+                            rotmat=rotmat,
+                            homeconf=self.arm_homeconf,
+                            name='arm', enable_cc=True)
+        # gripper
+        self.hnd = hnd.Dh50(pos=self.arm.jnts[-1]['gl_posq'],
+                            rotmat=self.arm.jnts[-1]['gl_rotmatq'],
+                            name='hnd', enable_cc=False)
+
+        self.base = jl.JLChain(pos=pos+np.array([0, 0, -0.02]),
+                               rotmat=rotmat.dot(rm.rotmat_from_axangle([0, 0, 1], np.pi/2)),
+                               homeconf=np.zeros(0),
+                               name='machine')
+
+        self.base.lnks[0]['collision_model'] = gm.GeometricModel(
+            os.path.join(this_dir, "meshes", "wholetable.stl"))
+        self.base.lnks[0]['rgba'] = [.35, .35, .35, 1]
+        self.base.reinitialize()
+
+        # tool center point
+        self.arm.jlc.tcp_jnt_id = -1
+        self.arm.jlc.tcp_loc_pos = self.hnd.jaw_center_pos
+        self.arm.jlc.tcp_loc_rotmat = self.hnd.jaw_center_rotmat
+        # a list of detailed information about objects in hand, see CollisionChecker.add_objinhnd
+        self.oih_infos = []
+        # collision detection
+        if enable_cc:
+            self.enable_cc()
+        # component map
+        self.manipulator_dict['arm'] = self.arm
+        self.manipulator_dict['hnd'] = self.arm
+        self.hnd_dict['hnd'] = self.hnd
+        self.hnd_dict['arm'] = self.hnd
+        self.iksolver_cache = {}
+
+    @staticmethod
+    def _base_combined_cdnp(name, radius):
+        collision_node = CollisionNode(name)
+        collision_primitive_c0 = CollisionBox(Point3(-0.1, 0.0, 0.14 - 0.82),
+                                              x=.35 + radius, y=.3 + radius, z=.14 + radius)
+        collision_node.addSolid(collision_primitive_c0)
+        collision_primitive_c1 = CollisionBox(Point3(0.0, 0.0, -.3),
+                                              x=.112 + radius, y=.112 + radius, z=.3 + radius)
+        collision_node.addSolid(collision_primitive_c1)
+        return collision_node
+
+    def enable_cc(self):
+        super().enable_cc()
+        self.cc.add_cdlnks(self.arm, [0, 1, 2, 3, 4, 5, 6])
+        self.cc.add_cdlnks(self.hnd.lft, [0, 1])
+        self.cc.add_cdlnks(self.hnd.rgt, [1])
+        activelist = [self.arm.lnks[1],
+                      self.arm.lnks[2],
+                      self.arm.lnks[3],
+                      self.arm.lnks[4],
+                      self.arm.lnks[5],
+                      self.arm.lnks[6],
+                      self.hnd.lft.lnks[0],
+                      self.hnd.lft.lnks[1],
+                      self.hnd.rgt.lnks[1]
+                      ]
+        self.cc.set_active_cdlnks(activelist)
+
+    def fix_to(self, pos, rotmat):
+        self.pos = pos
+        self.rotmat = rotmat
+        self.arm.fix_to(pos=self.pos, rotmat=self.rotmat)
+        self.hnd.fix_to(pos=self.arm.jnts[-1]['gl_posq'], rotmat=self.arm.jnts[-1]['gl_rotmatq'])
+
+        for obj_info in self.oih_infos:
+            gl_pos, gl_rotmat = self.arm.cvt_loc_tcp_to_gl(obj_info['rel_pos'], obj_info['rel_rotmat'])
+            obj_info['gl_pos'] = gl_pos
+            obj_info['gl_rotmat'] = gl_rotmat
+
+    def get_tgt_pose_in_rbt(self, tgt_pos, tgt_rotmat):
+        arm_pos = self.arm.pos
+        arm_rot = self.arm.rotmat
+        wd_to_rbt = rm.homomat_from_posrot(arm_pos, arm_rot)
+        hand_pos = self.hnd.jaw_center_pos
+        hand_rot = self.hnd.jaw_center_rotmat
+        end_to_hand = rm.homomat_from_posrot(hand_pos.dot(hand_rot), hand_rot)
+        hand_to_end = np.linalg.inv(end_to_hand)
+        tgt_homomat_wd = rm.homomat_from_posrot(tgt_pos, tgt_rotmat)
+        end_homomat_wd = tgt_homomat_wd.dot(hand_to_end)
+        end_homomat_rbt = np.linalg.inv(wd_to_rbt).dot(end_homomat_wd)
+        new_tgt_rot = end_homomat_rbt[:3, :3]
+        new_tgt_pos = end_homomat_rbt[:3, 3]
+        return new_tgt_pos, new_tgt_rot
+
+    def ur_fast_ik(self,
+                   tgt_pos=np.zeros(3),
+                   tgt_rotmat=np.eye(3),
+                   seed_jnt_values=None):
+        new_tgt_pos, new_tgt_rot = self.get_tgt_pose_in_rbt(tgt_pos, tgt_rotmat)
+        # if not hasattr(self, 'ur_ikfast_solver'):
+        #     self.ur_ikfast_solver = UrIkFast(robot_name="ur5e")
+        seed_jnt_values = seed_jnt_values if seed_jnt_values is not None else np.zeros(6)
+        return self.ur_ikfast_solver.ik(new_tgt_pos, new_tgt_rot, seed_jnt_values, False)
+
+    def tracik(self,
+               urdf_path: str = os.path.join(os.path.dirname(__file__), "urdf/ur7e.urdf"),
+               base_link_name: str = 'base_link',
+               tip_link_name: str = 'wrist_3_link',
+               tgt_pos=np.zeros(3),
+               tgt_rotmat=np.eye(3),
+               seed_jnt_values=None,
+               solver_type: Literal['Speed', 'Distance', 'Manip1', 'Manip2'] = "Manip1"):
+        new_tgt_pos, new_tgt_rot = self.get_tgt_pose_in_rbt(tgt_pos, tgt_rotmat)
+        key = (urdf_path, base_link_name, tip_link_name, solver_type)
+        if key not in self.iksolver_cache:
+            self.iksolver_cache[key] = TracIK(base_link_name=base_link_name,
+                                              tip_link_name=tip_link_name,
+                                              urdf_path=urdf_path,
+                                              solver_type=solver_type)
+        iksolver = self.iksolver_cache[key]
+        seed_jnt_values = seed_jnt_values if seed_jnt_values is not None else np.zeros(6)
+        return iksolver.ik(new_tgt_pos, new_tgt_rot, seed_jnt_values)
+
+    def fk(self, component_name='arm', jnt_values=np.zeros(6)):
+        """
+        :param jnt_values: 7 or 3+7, 3=agv, 7=arm, 1=grpr; metrics: meter-radian
+        :param component_name: 'arm', 'agv', or 'all'
+        :return:
+        author: weiwei
+        date: 20201208toyonaka
+        """
+
+        def update_oih(component_name='arm'):
+            for obj_info in self.oih_infos:
+                gl_pos, gl_rotmat = self.cvt_loc_tcp_to_gl(component_name, obj_info['rel_pos'], obj_info['rel_rotmat'])
+                obj_info['gl_pos'] = gl_pos
+                obj_info['gl_rotmat'] = gl_rotmat
+
+        def update_component(component_name, jnt_values):
+            status = self.manipulator_dict[component_name].fk(jnt_values=jnt_values)
+            self.hnd_dict[component_name].fix_to(
+                pos=self.manipulator_dict[component_name].jnts[-1]['gl_posq'],
+                rotmat=self.manipulator_dict[component_name].jnts[-1]['gl_rotmatq'])
+            update_oih(component_name=component_name)
+            return status
+
+        if component_name in self.manipulator_dict:
+            if not isinstance(jnt_values, np.ndarray) or jnt_values.size != 6:
+                raise ValueError("An 1x6 npdarray must be specified to move the arm!")
+            return update_component(component_name, jnt_values)
+        else:
+            raise ValueError("The given component name is not supported!")
+
+    def get_jnt_values(self, component_name):
+        if component_name in self.manipulator_dict:
+            return self.manipulator_dict[component_name].get_jnt_values()
+        else:
+            raise ValueError("The given component name is not supported!")
+
+    def get_jnt_init(self, component_name):
+        if component_name in self.manipulator_dict:
+            return self.arm_homeconf
+        else:
+            raise ValueError("The given component name is not supported!")
+
+    def move2init(self):
+        self.fk(component_name="arm", jnt_values=self.arm_homeconf)
+
+    def rand_conf(self, component_name):
+        if component_name in self.manipulator_dict:
+            return super().rand_conf(component_name)
+        else:
+            raise NotImplementedError
+
+    def jaw_to(self, hand_name, jawwidth=0.0):
+        self.hnd.jaw_to(jawwidth)
+
+    def hold(self, hnd_name, objcm, jawwidth=None):
+        """
+        the objcm is added as a part of the robot_s to the cd checker
+        :param jawwidth:
+        :param objcm:
+        :return:
+        """
+        if hnd_name not in self.hnd_dict:
+            raise ValueError("Hand name does not exist!")
+        if jawwidth is not None:
+            self.hnd_dict[hnd_name].jaw_to(jawwidth)
+        rel_pos, rel_rotmat = self.manipulator_dict[hnd_name].cvt_gl_to_loc_tcp(objcm.get_pos(), objcm.get_rotmat())
+        intolist = [self.arm.lnks[1],
+                    self.arm.lnks[2],
+                    self.arm.lnks[3],
+                    self.arm.lnks[4]]
+        self.oih_infos.append(self.cc.add_cdobj(objcm, rel_pos, rel_rotmat, intolist))
+        return rel_pos, rel_rotmat
+
+    def get_oih_list(self):
+        return_list = []
+        for obj_info in self.oih_infos:
+            objcm = obj_info['collision_model']
+            objcm.set_pos(obj_info['gl_pos'])
+            objcm.set_rotmat(obj_info['gl_rotmat'])
+            return_list.append(objcm)
+        return return_list
+
+    def grasp(self, obj_cmodel):
+        try:
+            self.cc.add_cdlnks(obj_cmodel, [0])  # 假设物体只有一个链接
+        except ValueError as e:
+            if "already added" not in str(e):
+                raise e
+
+        # 更新激活列表，包含被抓取的物体
+        current_activelist = self.cc.get_active_cdlnks()  # 获取当前激活列表
+        current_activelist.append(obj_cmodel.lnks[0])  # 添加物体链接
+        self.cc.set_active_cdlnks(current_activelist)  # 设置新的激活列表
+
+        # 存储物体信息
+        self.oih_infos.append({
+            'obj_cmodel': obj_cmodel,
+            'gl_pos': obj_cmodel.get_pos(),
+            'gl_rotmat': obj_cmodel.get_rotmat()
+        })
+
+    def release(self, hnd_name, objcm, jawwidth=None):
+        """
+        the objcm is added as a part of the robot_s to the cd checker
+        :param jawwidth:
+        :param objcm:
+        :return:
+        """
+        if hnd_name not in self.hnd_dict:
+            raise ValueError("Hand name does not exist!")
+        if jawwidth is not None:
+            print(jawwidth)
+            self.hnd_dict[hnd_name].jaw_to(jawwidth)
+        for obj_info in self.oih_infos:
+            if obj_info['collision_model'] is objcm:
+                self.cc.delete_cdobj(obj_info)
+                self.oih_infos.remove(obj_info)
+                break
+
+    def gen_stickmodel(self,
+                       tcp_jnt_id=None,
+                       tcp_loc_pos=None,
+                       tcp_loc_rotmat=None,
+                       toggle_tcpcs=False,
+                       toggle_jntscs=False,
+                       toggle_connjnt=False,
+                       name='xarm7_shuidi_mobile_stickmodel'):
+        stickmodel = mc.ModelCollection(name=name)
+        self.arm.gen_stickmodel(tcp_jnt_id=tcp_jnt_id,
+                                tcp_loc_pos=tcp_loc_pos,
+                                tcp_loc_rotmat=tcp_loc_rotmat,
+                                toggle_tcpcs=toggle_tcpcs,
+                                toggle_jntscs=toggle_jntscs,
+                                toggle_connjnt=toggle_connjnt).attach_to(stickmodel)
+        self.hnd.gen_stickmodel(toggle_tcpcs=False,
+                                toggle_jntscs=toggle_jntscs).attach_to(stickmodel)
+        self.base.gen_stickmodel(toggle_tcpcs=False,
+                                 toggle_jntscs=toggle_jntscs).attach_to(stickmodel)
+        return stickmodel
+
+    def gen_meshmodel(self,
+                      tcp_jnt_id=None,
+                      tcp_loc_pos=None,
+                      tcp_loc_rotmat=None,
+                      toggle_tcpcs=False,
+                      toggle_jntscs=False,
+                      rgba=None,
+                      is_machine=None,
+                      is_robot=True,
+                      name='xarm_shuidi_mobile_meshmodel'):
+        meshmodel = mc.ModelCollection(name=name)
+        if is_robot:
+            self.arm.gen_meshmodel(tcp_jnt_id=tcp_jnt_id,
+                                   tcp_loc_pos=tcp_loc_pos,
+                                   tcp_loc_rotmat=tcp_loc_rotmat,
+                                   toggle_tcpcs=toggle_tcpcs,
+                                   toggle_jntscs=toggle_jntscs,
+                                   rgba=rgba).attach_to(meshmodel)
+            self.hnd.gen_meshmodel(toggle_tcpcs=False,
+                                   toggle_jntscs=toggle_jntscs,
+                                   rgba=rgba).attach_to(meshmodel)
+            self.base.gen_meshmodel(toggle_tcpcs=False,
+                                    toggle_jntscs=toggle_jntscs,
+                                    ).attach_to(meshmodel)
+        for obj_info in self.oih_infos:
+            objcm = obj_info['collision_model']
+            objcm.set_pos(obj_info['gl_pos'])
+            objcm.set_rotmat(obj_info['gl_rotmat'])
+            objcm.copy().attach_to(meshmodel)
+        return meshmodel
+
+
+if __name__ == '__main__':
+    import time
+    import basis.robot_math as rm
+    import visualization.panda.world as wd
+
+    base = wd.World(cam_pos=[4, 3, 1], lookat_pos=[0, 0, 0])
+
+    gm.gen_frame().attach_to(base)
+    robot_s = UR7E(enable_cc=True)
+    robot_s.hnd.jaw_to(.05)
+    # robot_s.gen_meshmodel(toggle_tcpcs=True, toggle_jntscs=False).attach_to(base)
+    camera_pos = np.array([-0.044985,0.6161,0.02])
+    default_rot = rm.rotmat_from_axangle([0, 1, 0], np.pi).dot(rm.rotmat_from_axangle([0, 0, 1], -np.pi / 2))
+    conf = robot_s.ik('arm',camera_pos, default_rot)
+    robot_s.fk('arm', conf)
+    robot_s.gen_meshmodel().attach_to(base)
+    rot1 = rm.rotmat_from_axangle([0, 0, 1], np.pi/6) @ default_rot
+    rot2 = rm.rotmat_from_axangle([0, 0, 1], -np.pi/3) @ rot1
+
+    conf = robot_s.ik('arm', camera_pos, rot1)
+    robot_s.fk('arm', conf)
+    robot_s.gen_meshmodel().attach_to(base)
+
+    base.run()
+
+    # gm.gen_frame(pos=tgt_pos, rotmat=tgt_rotmat).attach_to(base)
+    # robot_s.show_cdprimit()
+    # test_pos = np.array([.25, .3, .15])
+    # test_pos_list = [np.array([0.3, 0.4, 0.5])]
+    # test_rot = rm.rotmat_from_axangle([0, 1, 0], math.pi)
+
+    # for i, test_pos in enumerate(test_pos_list):
+    #     gm.gen_frame(test_pos, test_rot, length=0.5).attach_to(base)
+    #     start_time = time.time()
+    #     conf = robot_s.tracik(tgt_pos=test_pos, tgt_rotmat=test_rot,
+    #                           seed_jnt_values=robot_s.get_jnt_init("arm"), solver_type='Manip2')
+    #
+    #     # conf = robot_s.ur_fast_ik(tgt_pos=test_pos, tgt_rotmat=test_rot,
+    #     #                           seed_jnt_values=robot_s.get_jnt_init("arm"))
+    #
+    #     # conf = robot_s.ik('arm', tgt_pos=test_pos, tgt_rotmat=test_rot)
+    #     print(time.time() - start_time)
+    #     print(conf)
+    #     robot_s.fk('arm', conf)
+    #     robot_s.gen_meshmodel().attach_to(base)
+    # base.run()

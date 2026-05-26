@@ -1,0 +1,11 @@
+UR7E抓取紧固件
+一、所有文件：
+check_object.py     检测物体文件，包括yolo检测
+config.py           各种参数配置文件
+grasp_executor.py   抓取规划和执行文件
+main.py             单线程运行文件
+multi_thread_main.py多线程运行文件
+realsense_camera.py 相机文件
+ur7_excute.py       仿真测试程序
+process_dataset.py 拍摄数据集文件
+二、

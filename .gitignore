@@ -1,0 +1,6 @@
+/venv/
+/.idea/
+*.pyc
+.idea/misc.xml
+.idea/wrs.iml
+/0000_moonshot/finger/heart/
