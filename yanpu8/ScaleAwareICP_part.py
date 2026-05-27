@@ -740,7 +740,7 @@ class RotationOnlyICP:
     # 用于U625的匹配
     def run_rotation_only_icp(self, ply, ply_path, stl_path, manual_scale=None,
                               use_cluster_center=True, use_bbox_center=True,
-                              eps=0.02, min_samples=30, show = False):
+                              eps=0.02, min_samples=30, show = False,save = False):
         """运行只优化旋转的ICP配准,用于U625的匹配"""
 
         print("=" * 60)
@@ -774,58 +774,58 @@ class RotationOnlyICP:
 
             # 5.2 显示所有阶段对比
             self.visualize_all_stages(scene, scaled_model_cloud, transformation)
+        if save:
+            # 6. 保存结果
+            output_dir = "rotation_only_results"
+            os.makedirs(output_dir, exist_ok=True)
 
-        # 6. 保存结果
-        output_dir = "rotation_only_results"
-        os.makedirs(output_dir, exist_ok=True)
+            # 保存变换矩阵
+            np.savetxt(os.path.join(output_dir, "rotation_only_transformation.txt"), transformation)
 
-        # 保存变换矩阵
-        np.savetxt(os.path.join(output_dir, "rotation_only_transformation.txt"), transformation)
+            if self.initial_translation_only is not None:
+                np.savetxt(os.path.join(output_dir, "translation_only_matrix.txt"),
+                           self.initial_translation_only)
 
-        if self.initial_translation_only is not None:
-            np.savetxt(os.path.join(output_dir, "translation_only_matrix.txt"),
-                       self.initial_translation_only)
+            # 保存详细信息
+            with open(os.path.join(output_dir, "rotation_only_info.txt"), 'w') as f:
+                f.write(f"=== 只优化旋转的ICP配准结果 ===\n\n")
+                f.write(f"对齐方式: {'聚类包围盒中心对齐' if use_bbox_center else '聚类质心对齐'}\n")
+                f.write(f"固定平移向量: {self.fixed_translation}\n")
+                f.write(f"平移距离: {np.linalg.norm(self.fixed_translation):.6f}\n")
+                f.write(f"使用缩放因子: {scale_factor:.6f}\n")
+                f.write(f"使用聚类中心初始化: {use_cluster_center}\n")
+                f.write(f"使用包围盒中心: {use_bbox_center}\n")
 
-        # 保存详细信息
-        with open(os.path.join(output_dir, "rotation_only_info.txt"), 'w') as f:
-            f.write(f"=== 只优化旋转的ICP配准结果 ===\n\n")
-            f.write(f"对齐方式: {'聚类包围盒中心对齐' if use_bbox_center else '聚类质心对齐'}\n")
-            f.write(f"固定平移向量: {self.fixed_translation}\n")
-            f.write(f"平移距离: {np.linalg.norm(self.fixed_translation):.6f}\n")
-            f.write(f"使用缩放因子: {scale_factor:.6f}\n")
-            f.write(f"使用聚类中心初始化: {use_cluster_center}\n")
-            f.write(f"使用包围盒中心: {use_bbox_center}\n")
+                if self.cluster_center is not None:
+                    f.write(f"聚类质心: {self.cluster_center}\n")
+                if self.cluster_bbox_center is not None:
+                    f.write(f"聚类包围盒中心: {self.cluster_bbox_center}\n")
 
-            if self.cluster_center is not None:
-                f.write(f"聚类质心: {self.cluster_center}\n")
-            if self.cluster_bbox_center is not None:
-                f.write(f"聚类包围盒中心: {self.cluster_bbox_center}\n")
+                # 提取旋转矩阵和欧拉角
+                R = transformation[:3, :3]
+                f.write(f"\n最终旋转矩阵:\n")
+                for i in range(3):
+                    f.write(f"  [{R[i, 0]:.6f}, {R[i, 1]:.6f}, {R[i, 2]:.6f}]\n")
 
-            # 提取旋转矩阵和欧拉角
-            R = transformation[:3, :3]
-            f.write(f"\n最终旋转矩阵:\n")
-            for i in range(3):
-                f.write(f"  [{R[i, 0]:.6f}, {R[i, 1]:.6f}, {R[i, 2]:.6f}]\n")
+                # 计算欧拉角
+                sy = np.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
+                singular = sy < 1e-6
 
-            # 计算欧拉角
-            sy = np.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
-            singular = sy < 1e-6
+                if not singular:
+                    x = np.arctan2(R[2, 1], R[2, 2])
+                    y = np.arctan2(-R[2, 0], sy)
+                    z = np.arctan2(R[1, 0], R[0, 0])
+                else:
+                    x = np.arctan2(-R[1, 2], R[1, 1])
+                    y = np.arctan2(-R[2, 0], sy)
+                    z = 0
 
-            if not singular:
-                x = np.arctan2(R[2, 1], R[2, 2])
-                y = np.arctan2(-R[2, 0], sy)
-                z = np.arctan2(R[1, 0], R[0, 0])
-            else:
-                x = np.arctan2(-R[1, 2], R[1, 1])
-                y = np.arctan2(-R[2, 0], sy)
-                z = 0
+                angles_deg = np.degrees([x, y, z])
+                f.write(f"\n欧拉角(度): [{angles_deg[0]:.2f}, {angles_deg[1]:.2f}, {angles_deg[2]:.2f}]\n")
 
-            angles_deg = np.degrees([x, y, z])
-            f.write(f"\n欧拉角(度): [{angles_deg[0]:.2f}, {angles_deg[1]:.2f}, {angles_deg[2]:.2f}]\n")
-
-        print(f"\n结果已保存到: {output_dir}")
-        print(f"固定平移向量: {self.fixed_translation}")
-        print(f"对齐方式: {'聚类包围盒中心' if use_bbox_center else '聚类质心'}")
+            print(f"\n结果已保存到: {output_dir}")
+            print(f"固定平移向量: {self.fixed_translation}")
+            print(f"对齐方式: {'聚类包围盒中心' if use_bbox_center else '聚类质心'}")
 
         return transformation, scale_factor
 

@@ -270,6 +270,23 @@ class UR7E(ri.RobotInterface):
         xipan_pos = np.array([0.22, -0.13, 0.77])
         xipan.set_pos(xipan_pos)
         xipan.set_rotmat(rm.rotmat_from_euler(0, 0, math.pi / 1))
+
+        fence1 = cm.CollisionModel(
+            r"E:\py_project\wrsrobot\wrs_shu\robot_sim\robots\ur7e\object\fence.STL",
+            cdprimit_type="box", expand_radius=.001
+        )
+        fence1_pos = np.array([1.2, 0, 0])
+        fence1.set_pos(fence1_pos)
+        fence1.set_rotmat(rm.rotmat_from_euler(0, 0, 0))
+        fence1.set_rgba([1, 1, 1, 0.01])  # 例如：完全透明
+        fence2 = cm.CollisionModel(
+            r"E:\py_project\wrsrobot\wrs_shu\robot_sim\robots\ur7e\object\fence.STL",
+            cdprimit_type="box", expand_radius=.001
+        )
+        fence2_pos = np.array([0.8, 0.7, 0])
+        fence2.set_pos(fence2_pos)
+        fence2.set_rotmat(rm.rotmat_from_euler(0, 0, math.pi / 2))
+        fence2.set_rgba([1, 1, 1, 0.01])  # 例如：完全透明
         # 所有物体模型
         all_machine = [machine,
                        collections1,
@@ -284,6 +301,7 @@ class UR7E(ri.RobotInterface):
                        box2_collections1, box2_collections2, box2_collections3,box2_collections4,
                        box2_collections5,
                        xipan,
+                       fence1,fence2
                        ]
         for obstacle in all_machine:
             obstacle.attach_to(base0)
@@ -294,6 +312,7 @@ class UR7E(ri.RobotInterface):
                        box2_collections1, box2_collections2, box2_collections3,box2_collections4,
                          box2_collections5,
                         xipan,
+                         fence1,fence2
                          ]
         if show_collision:  # 展示碰撞体
             for obstacle in obstacle_list:
@@ -328,6 +347,13 @@ class UR7E(ri.RobotInterface):
                     self.hnd.lft.lnks[1],
                     self.hnd.rgt.lnks[1], ]
         self.cc.set_cdpair(fromlist, intolist)  # 设置碰撞检测对
+
+        fromlist1 = [self.arm.lnks[2],
+                    self.arm.lnks[3]]  # 中间必须少一个，不然一直检测到碰撞
+        intolist1 = [self.hnd.lft.lnks[0],
+                    self.hnd.lft.lnks[1],
+                    self.hnd.rgt.lnks[1]]
+        # self.cc.set_cdpair(fromlist1, intolist1)  # 设置碰撞检测对
 
         for oih_info in self.oih_infos:
             objcm = oih_info['collision_model']
@@ -637,6 +663,7 @@ if __name__ == '__main__':
     robot_s = UR7E(pos=np.array([0.7, 0.2, 0.7]), rotmat=rm.rotmat_from_axangle(np.array([0, 0, 1]), math.pi),
                      enable_cc=True)  # 仿真机器人
     # robot_s.gen_meshmodel().attach_to(base)
+    # robot_s.show_cdprimit()
     # conf = np.array([-0.46189231, - 1.55124523,  1.75405697, - 1.77360785, - 1.57079618, - 3.60348501])
     # robot_s.fk(component_name='arm', jnt_values=conf)
     # # robot_s.gen_meshmodel().attach_to(base)
@@ -645,7 +672,7 @@ if __name__ == '__main__':
     # 加入障碍物
     robot_s.get_obstacle_list(base,True)
     #
-    # base.run()
+
 
 
     # # 通过世界坐标系的手爪中心位置和旋转矩阵，求得实际的机器人坐标系的tcp位姿pose
@@ -706,3 +733,6 @@ if __name__ == '__main__':
     # Rotation = Rot.from_matrix(R_sim_to_real)
     # euler = Rotation.as_euler('xyz')
     # print(euler)    # [-9.48082386e-04 -2.40333479e-03 -3.14136550e+00]
+
+
+    base.run()

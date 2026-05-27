@@ -7,23 +7,24 @@ class ForceControl:
         self.rbt_r = robot_real
         self.task_frame = [0, 0, 0, 0, 0, 0]
         self.selection_vector = [0, 0, 1, 0, 0, 0]  # 力方向：z轴方向
-        self.wrench_down = [0, 0, -10, 0, 0, 0]  # 力大小：-10
+
         self.force_type = 2
         self.limits = [20, 20, 20, 1, 1, 1]
 
-    def move(self, timeout):    # 下移抓取或放置
+    def move(self, time1 = 0.3, timeout = 1, force = -10):    # 下移抓取或放置
         # 初始化变量
         previous_pose = None
         previous_time = None
         period = 0.1  # 检测时间周期
         POSITION_THRESHOLD = 0.001  # 停止阈值0.001m
         stop = 0  # 位移停止标志
+        wrench_down = [0, 0, force, 0, 0, 0]  # 力大小：-10
         if not self.rbt_r.check_rtdec_is_connected():
             print("rtdec重连失败，力控程序失败")
-            return
+            return 0
         # 执行力控制
-        self.rbt_r.rtde_c.forceMode(self.task_frame, self.selection_vector, self.wrench_down, self.force_type, self.limits)  # 施加力
-        time.sleep(0.3) # 固定力控0.3s
+        self.rbt_r.rtde_c.forceMode(self.task_frame, self.selection_vector, wrench_down, self.force_type, self.limits)  # 施加力
+        time.sleep(time1) # 固定力控0.3s
         start_time = time.time()
         while True:
             self.rbt_r.rtde_c.waitPeriod(self.rbt_r.rtde_c.initPeriod())  # 等待一个控制时间
@@ -35,11 +36,23 @@ class ForceControl:
                     previous_time = current_time
                     continue
                 # 检查rtde_r是否连接
-                if not self.rbt_r.check_rtder_is_connected():
-                    print("rtde_r重连失败,退出力控")
+                for i in range(3):
+                    if self.rbt_r.rtde_r.isConnected():  # 已连接
+                        print("rtde_r已连接")
+                        break
+                    print(f"RTDE_r连接掉线，第{i + 1}次重连...")
+                    try:
+                        self.rbt_r.rtde_r.reconnect()   # 重连
+                        start_time = time.time()    # 重新记时
+                        self.rbt_r.rtde_c.forceMode(self.task_frame, self.selection_vector, wrench_down,
+                                                    self.force_type, self.limits)  # 重新施加力
+                    except Exception as e:
+                        print(f"重连异常: {e}")
+                else:
+                    print("rtder三次重连仍失败")
                     self.rbt_r.rtde_c.forceMode(self.task_frame, self.selection_vector, [0] * 6, self.force_type,self.limits)
                     self.rbt_r.rtde_c.forceModeStop()  # 退出力控
-                    break
+                    return current_time - start_time
                 # 获取当前位姿
                 current_pose = self.rbt_r.rtde_r.getActualTCPPose()
                 # print(f"当前位置：{current_pos}")
@@ -52,7 +65,7 @@ class ForceControl:
                         self.rbt_r.rtde_c.forceMode(self.task_frame, self.selection_vector, [0]*6, self.force_type,self.limits)
                         self.rbt_r.rtde_c.forceModeStop()  # 退出力控
                         print(f"到达目标点前{period * 3}秒内位置变化小于{POSITION_THRESHOLD * 3}m")
-                        break
+                        return current_time - start_time
                 else:  # 清零
                     stop = 0
                 # 更新参考位置和时间戳
@@ -63,7 +76,7 @@ class ForceControl:
                 print("力控到时，退出力控")
                 self.rbt_r.rtde_c.forceMode(self.task_frame, self.selection_vector, [0]*6, self.force_type, self.limits)
                 self.rbt_r.rtde_c.forceModeStop()  # 退出力控
-                break
+                return current_time - start_time
 
 
 if __name__ == "__main__":

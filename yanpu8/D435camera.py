@@ -288,7 +288,7 @@ class D435Detector:
                 )
                 if save:
                     timestamp = time.strftime("%Y%m%d-%H%M%S")
-                    color_path = os.path.join(self.save_directory, f'color_image_{timestamp}.jpg')
+                    color_path = os.path.join(self.save_directory, f'rgb_{timestamp}.jpg')
                     depth_path = os.path.join(self.save_directory, f'depth_image_{timestamp}.png')
                     cv2.imwrite(color_path, captured_color_image)
                     Image.fromarray(captured_depth_image.astype(np.uint16)).save(depth_path)
@@ -672,11 +672,11 @@ if __name__ == "__main__":
     # print(camera_list)
     # [{'serial': '241122073898', 'name': 'Intel RealSense D435', 'firmware': '5.13.0.55'}, {'serial': '317222074435', 'name': 'Intel RealSense D435', 'firmware': '5.13.0.55'}]
     # 箱子上方D435相机
-    # D435_1 = D435Detector(camera_type='d435', save_directory=save_dir, camera_serial = '241122073898')
+    D435_1 = D435Detector(camera_type='d435', save_directory=save_dir, camera_serial = '241122073898')
     # D435_1.capture_rgb(0.5,True,True)
     # 放置点上方D435相机
     D435_2 = D435Detector(camera_type='d435', save_directory=save_dir, camera_serial='317222074435')
-    D435_2.capture_rgb(0.5, True, True)
+    # D435_2.capture_rgb(0.5, True, True)
 
     # image = detector.capture_rgb(0.5,True,True)
     # # 示例：自动捕获
@@ -696,21 +696,23 @@ if __name__ == "__main__":
     # if depth_img is not None:
     #     print(f"深度图像尺寸: {depth_img.shape}")
     #
-    # if ply_path is not None:
-    #     print(f"PLY文件路径: {ply_path}")
-    #     print(f"文件存在: {os.path.exists(ply_path)}")
-    #
-    #     # 加载点云并分析
-    #     if os.path.exists(ply_path):
-    #         pcd = o3d.io.read_point_cloud(ply_path)
-    #         detector.analyze_pointcloud_distribution(pcd)
-    #
-    #         # 可视化点云
-    #         o3d.visualization.draw_geometries([pcd],
-    #                                           window_name=f"Point Cloud with Invalid Points",
-    #                                           width=800,
-    #                                           height=600,
-    #                                           point_show_normal=False)
+
+    ply_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435\pointcloud_20260527-140547.ply"
+    if ply_path is not None:
+        print(f"PLY文件路径: {ply_path}")
+        print(f"文件存在: {os.path.exists(ply_path)}")
+
+        # 加载点云并分析
+        if os.path.exists(ply_path):
+            pcd = o3d.io.read_point_cloud(ply_path)
+            D435_1.analyze_pointcloud_distribution(pcd)
+
+            # 可视化点云
+            o3d.visualization.draw_geometries([pcd],
+                                              window_name=f"Point Cloud with Invalid Points",
+                                              width=800,
+                                              height=600,
+                                              point_show_normal=False)
 
     # 测试纸板在第几层
     # 拍摄图片

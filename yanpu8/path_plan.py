@@ -115,14 +115,14 @@ class Path_plan(object):
         # 根据物体位置和姿态计算出抓取信息列表
         grasp_list = self.grasp_planner.U625_to_jaw(pos,rot)
         if len(grasp_list) == 0:
-            print("U625抓取列表为空")
-            self.base.run()
+            print("U625抓取列表为空，抓取姿态都碰撞")
+            # self.base.run()
             return None
         # 抓取位置，姿态和旋转角度，从4个候选姿态中选出
         grasp_pos, grasp_rot, grasp_angle = self.U625_rot_get_min_grasp_angle_from_list(grasp_list, CONFIG_U1['grasp']['wait_rot'])
         if grasp_pos is None:
             print("U625抓取位姿计算失败")
-            self.base.run()
+            # self.base.run()
             return None
         # 抓取位姿
         grasp_pose = self.rbt_s.get_real_tcp_pose(grasp_pos,grasp_rot)
@@ -136,19 +136,19 @@ class Path_plan(object):
         high_grasp_conf = self._safe_ik(high_grasp_pos, grasp_rot, seed=CONFIG_U625['grasp']['box_center_conf'], method = 'tracik')
         if high_grasp_conf is None:
             print(f"U625抓取高位计算失败，high_grasp_pos:{high_grasp_pos}grasp_rot:{grasp_rot}")
-            self.base.run()
+            # self.base.run()
             return None
         # 接近路径1，RRT路径
-        approach_path1 = self.plan_path(current_conf, high_grasp_conf,0.05)
+        approach_path1 = self.plan_path(current_conf, high_grasp_conf,0.07)
         if approach_path1 is None:
             print("U625接近路径1计算失败")
-            self.base.run()
+            # self.base.run()
             return None
         # 接近路径2，直线路径
         approach_path2 = self.get_line_path(approach_path1[-1],high_grasp_pos,low_grasp_pos,grasp_rot)
         if approach_path2 is None:
             print("U625接近路径1计算失败")
-            self.base.run()
+            # self.base.run()
             return None
         # 合并中间平滑处理,最终合并路径
         approach_path = self.smooth_two_path(approach_path1, approach_path2,0.05)
@@ -157,7 +157,7 @@ class Path_plan(object):
                                                start_rot=grasp_rot , angle= -grasp_angle)
         if place_path1 is None:
             print("U625放置路径1计算失败")
-            self.base.run()
+            # self.base.run()
             return None
         # 中间平滑处理,最终合并路径
         place_path = self.smooth_two_path(place_path1, CONFIG_U625['place']['place_path'],0.05)
@@ -171,7 +171,7 @@ class Path_plan(object):
         return dict
 
     #################U1路径规划###################
-    def plan_path(self, current_conf, target_conf, step = 0.05):  # 从当前位置移动到目标位置
+    def plan_path(self, current_conf, target_conf, step = 0.07):  # 从当前位置移动到目标位置
         """
         :param current_conf: 起始关节角
         :param target_conf: 目标关节角
@@ -183,10 +183,48 @@ class Path_plan(object):
             obstacle_list=self.obstacle_list,
             otherrobot_list=[],
             ext_dist=step,   # 扩展步长
-            max_iter=300,   # 最大迭代次数
+            max_iter=400,   # 最大迭代次数
             max_time=15.0,  # 最大规划时间（秒）
             smoothing_iterations=50,    # 平滑迭代次数
             animation=False)
+        if path_list is None:
+            # 检查首末点是否碰撞
+            if self.rrt_planner._is_collided(self.component_name, current_conf, self.obstacle_list, []):
+                print(f"RRT开始点 {list(current_conf)} 碰撞!")
+                return None
+            if self.rrt_planner._is_collided(self.component_name, target_conf, self.obstacle_list, []):
+                print(f"RRT结束点 {list(target_conf)} 碰撞!")
+                return None
+            print("RRT路径规划失败")
+            # 把步长改大
+            path_list = self.rrt_planner.plan(
+                component_name=self.component_name,
+                start_conf=current_conf,
+                goal_conf=target_conf,
+                obstacle_list=self.obstacle_list,
+                otherrobot_list=[],
+                ext_dist=min(step+0.05,0.12),  # 扩展步长,最大0.12
+                max_iter=400,  # 最大迭代次数
+                max_time=15.0,  # 最大规划时间（秒）
+                smoothing_iterations=50,  # 平滑迭代次数
+                animation=False)
+            if path_list is None:
+                print("步长改大RRT还是规划失败")
+                # 把步长改小
+                path_list = self.rrt_planner.plan(
+                    component_name=self.component_name,
+                    start_conf=current_conf,
+                    goal_conf=target_conf,
+                    obstacle_list=self.obstacle_list,
+                    otherrobot_list=[],
+                    ext_dist=max(step - 0.05, 0.04),  # 扩展步长,最小0.04
+                    max_iter=400,  # 最大迭代次数
+                    max_time=15.0,  # 最大规划时间（秒）
+                    smoothing_iterations=50,  # 平滑迭代次数
+                    animation=False)
+                if path_list is None:
+                    print("步长改小RRT还是规划失败")
+
         return path_list
 
     def get_line_path(self, seed=None, start=None, goal=None, rot=None): # 直线路径规划,返回关节点路径
@@ -199,7 +237,7 @@ class Path_plan(object):
         for pos in np.linspace(start, goal, num):
             conf = self._safe_ik(pos, rot, seed = cur_seed, method='tracik')
             if conf is None:    # ik求解失败
-                print(f"机器人tracik求解位置{pos}旋转{rot}关节碰撞，直线路径求解失败")
+                print(f"机器人tracik求解位置{pos}旋转{rot}关节seed{cur_seed}碰撞，直线路径求解失败")
                 return None
             else:
                 jnts.append(conf)
@@ -264,7 +302,7 @@ class Path_plan(object):
         elif method == 'tracik':
             conf = self.rbt_s.tracik(tgt_pos=tgt_pos, tgt_rotmat=tgt_rotmat, seed_jnt_values=seed0, solver_type='Distance')
         else:
-            raise ValueError("Wrong method")
+            raise ValueError("_safe_ik Wrong method")
         if conf is None:
             for seed in [seed1, seed2, seed3]:
                 conf = self.rbt_s.tracik(tgt_pos=tgt_pos, tgt_rotmat=tgt_rotmat, seed_jnt_values=seed, solver_type='Distance')
@@ -359,7 +397,7 @@ class Path_plan(object):
                                        seed=CONFIG_U1['grasp']['box_center_conf'],
                                        method='tracik')
             if grasp_conf_0 is not None:
-                print(f"U1第{i}个抓取ik求解成功")
+                # print(f"U1第{i}个抓取ik求解成功")
                 grasp_rot_z = jaw_center_rotmat @ wait_rot.T
                 r = Rot.from_matrix(grasp_rot_z)
                 z_angle_0 = r.as_euler('xyz')[2]  # 从wait_rot到jaw_center_rotmat绕z轴旋转的弧度
@@ -410,10 +448,10 @@ class Path_plan(object):
 
     def smooth_two_path(self, path1, path2, step = 0.1):
         if path1 is None:
-            print("路径1为None")
+            print("平滑路径1为None")
             return None
         if path2 is None:
-            print("路径2为None")
+            print("平滑路径2为None")
             return None
         # 中间1/3部分进行平滑
         smooth_path_0 = path1[int(len(path1)*2/3):] + path2[0:int(len(path2)/3)]
@@ -455,13 +493,13 @@ class Path_plan(object):
         grasp_info_list = self.grasp_planner.U1_to_jaw(pos, U1_rot)
         if len(grasp_info_list) == 0:
             print("U1所有抓取点都碰撞")
-            self.base.run()
+            # self.base.run()
             return None
         # 找到旋转角最小的抓取角和抓取位置，旋转矩阵
         grasp_angle, grasp_pos, grasp_rot = self.U1_get_min_grasp_angle_from_list(grasp_info_list,wait_rot)
         if grasp_angle is None:
             print("U1抓取最小角度计算失败")
-            self.base.run()
+            # self.base.run()
             return None
         print(f"U1抓取角度：{grasp_angle}")
         # 抓取位姿
@@ -472,15 +510,16 @@ class Path_plan(object):
         high_grasp_pos = self.get_high_grasp_pos(grasp_pos, 0.10, 0.02)
         high_grasp_conf = self._safe_ik(tgt_pos=high_grasp_pos, tgt_rotmat=grasp_rot, seed=seed_jnts, method='tracik')
         if high_grasp_conf is None:
-            print(f"U1抓取高处ik计算失败:high_grasp_pos：{high_grasp_pos}grasp_rot：{grasp_rot}")
-            self.base.run()
+            print(f"U1抓取高处ik计算失败:high_grasp_pos：{high_grasp_pos}grasp_rot：{grasp_rot}，seed：{seed_jnts}")
+            # self.base.run()
             return None
+        print(f"high_grasp_conf:{high_grasp_conf}")
         # print(f"计算高处ik时间:{time.time()}")
         # 接近路径（速度快）
-        approach_path1 = self.plan_path(CONFIG_U1['grasp']['wait_conf'],high_grasp_conf,0.05)
+        approach_path1 = self.plan_path(CONFIG_U1['grasp']['wait_conf'],high_grasp_conf,0.07)
         if approach_path1 is None:
             print("U1接近路径1计算失败")
-            self.base.run()
+            # self.base.run()
             return None
         # print(f"计算接近路径1时间:{time.time()}")
         # 抓取低点位置
@@ -492,12 +531,12 @@ class Path_plan(object):
         approach_path2 = self.get_line_path(approach_path1[-1], high_grasp_pos, low_grasp_pos, grasp_rot)  # 可能有斜移
         if approach_path2 is None:
             print("U1接近路径2计算失败")
-            self.base.run()
+            # self.base.run()
             return None
         # print(f"计算接近路径2时间:{time.time()}")
         # 合并中间平滑处理,最终合并路径
         approach_path = self.smooth_two_path(approach_path1, approach_path2,0.1)
-        print(f"U1approach_path:{approach_path}")
+        # print(f"U1approach_path:{approach_path}")
         # print(f"计算抓取路径时间:{time.time()}")
         # print(f"接近路径：{approach_path}")
         if cls_id == 1: # 正放物体,也要计算放置路径，从抓取低点到抛弃点
@@ -510,7 +549,7 @@ class Path_plan(object):
             )
             if place_path2 is None:
                 print("U1丢弃路径2计算失败")
-                self.base.run()
+                # self.base.run()
                 return None
             # 中间平滑处理,合并最终放置路径，从抓取低点到等待点
             place_path = self.smooth_two_path(place_path1, place_path2, step=0.1)
@@ -538,7 +577,7 @@ class Path_plan(object):
                                                  start_rot=grasp_rot, angle=-grasp_angle)   # 绕z轴旋转-grasp_angle弧度转回去
             if place_path2 is None:
                 print("U1放置路径2计算失败")
-                self.base.run()
+                # self.base.run()
                 return None
             # 中间平滑处理,合并最终放置路径
             place_path = self.smooth_two_path(place_path1, place_path2,step = 0.05)
@@ -551,7 +590,7 @@ class Path_plan(object):
             "high_place_pose":high_place_pose,  # 放置高点位姿
             "place_pose":place_pose,    # 放置点位姿
         }
-        print(f"U1place_path:{place_path}")
+        # print(f"U1place_path:{place_path}")
         print(f"U1抓取和放置路径规划总时间：{time.time() - start_time}")
         return conf_dict
 
@@ -606,8 +645,8 @@ if __name__ == '__main__':
 
     # U1路径规划
     # cls_id = 0
-    # pos = np.array([0.232+0.145, 0.32+0.245, 0.85])  # 物体位置
-    # angle = np.pi/2 # 物体相对于世界坐标系z轴的旋转角度
+    # pos = np.array([0.18814  ,   0.46112    , 0.79614])  # 物体位置
+    # angle = 0.3441535831891871 # 物体相对于世界坐标系z轴的旋转角度
     #
     # wait_rot = CONFIG_U1['grasp']['wait_rot']
     # grasp_and_place_path = Path_plan.U1_grasp_and_place_path(cls_id, pos, angle, wait_rot)
@@ -625,27 +664,27 @@ if __name__ == '__main__':
     #     rbt_mesh.attach_to(base)
     # base.run()
 
-    # # U625路径规划
-    # current_conf = CONFIG_U1['grasp']['wait_conf']
+    # # # U625路径规划
+    current_conf = CONFIG_U1['grasp']['wait_conf']
     # U625_pos = CONFIG_U625['grasp']['box_pos']+np.array([0.1,0.13,0.05])
-    #
-    # grasp_and_place_path = Path_plan.U625_grasp_and_place_path(current_conf, U625_pos)
-    # app_path = grasp_and_place_path['app']
-    # place_path = grasp_and_place_path['place']
-    # print(f"app_path:{app_path}")
-    # print(f"place_path:{place_path}")
-    # # 展示路径
-    # rbt_mesh = None
-    # for jnts1 in app_path:
-    #     rbt_s.fk("arm", jnts1)  ## 用正运动学（fk）更新机器人姿态
-    #     rbt_mesh = rbt_s.gen_meshmodel(rgba=[0, 1, 0, 0.5])
-    #     rbt_mesh.attach_to(base)
-    # rbt_mesh = None
-    # for jnts1 in place_path:
-    #     rbt_s.fk("arm", jnts1)  ## 用正运动学（fk）更新机器人姿态
-    #     rbt_mesh = rbt_s.gen_meshmodel(rgba=[1, 1, 0, 0.5])
-    #     rbt_mesh.attach_to(base)
-    # base.run()
+    U625_pos =np.array([  1.0123  ,  -0.28532  ,   0.86421])
+    grasp_and_place_path = Path_plan.U625_grasp_and_place_path(current_conf, U625_pos)
+    app_path = grasp_and_place_path['app']
+    place_path = grasp_and_place_path['place']
+    print(f"app_path:{app_path}")
+    print(f"place_path:{place_path}")
+    # 展示路径
+    rbt_mesh = None
+    for jnts1 in app_path:
+        rbt_s.fk("arm", jnts1)  ## 用正运动学（fk）更新机器人姿态
+        rbt_mesh = rbt_s.gen_meshmodel(rgba=[0, 1, 0, 0.5])
+        rbt_mesh.attach_to(base)
+    rbt_mesh = None
+    for jnts1 in place_path:
+        rbt_s.fk("arm", jnts1)  ## 用正运动学（fk）更新机器人姿态
+        rbt_mesh = rbt_s.gen_meshmodel(rgba=[1, 1, 0, 0.5])
+        rbt_mesh.attach_to(base)
+    base.run()
 
     # 吸盘路径规划
     # # 抓取低点
@@ -664,19 +703,19 @@ if __name__ == '__main__':
     # conf8 = CONFIG_U1_cc_xipan['vacuum_clean1']['conf8']
 
     # # 抓取低点
-    conf0 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf0']
-    # 抓取上方点
-    conf2 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf2']
-    # 纸板上方高点
-    conf3 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf3']
-    # 纸板正上方低点
-    conf4 = CONFIG_U625_cc_xipan['vacuum_clean2']['conf4']
-    # 纸板上方更高点
-    conf7 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf7']
-    # 丢弃点
-    conf6 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf6']
-    # 回来放置高点
-    conf8 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf8']
+    # conf0 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf0']
+    # # 抓取上方点
+    # conf2 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf2']
+    # # 纸板上方高点
+    # conf3 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf3']
+    # # 纸板正上方低点
+    # conf4 = CONFIG_U625_cc_xipan['vacuum_clean2']['conf4']
+    # # 纸板上方更高点
+    # conf7 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf7']
+    # # 丢弃点
+    # conf6 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf6']
+    # # 回来放置高点
+    # conf8 = CONFIG_U625_cc_xipan['vacuum_clean1']['conf8']
 
     # 从等待点到抓取低点
     # path1 = Path_plan.plan_path(CONFIG_U1['grasp']['wait_conf'], conf0)
@@ -703,16 +742,16 @@ if __name__ == '__main__':
     # print(smooth2)
 
     # # # 从纸板低点到丢弃点
-    path0 = Path_plan.plan_path(conf4,conf7,0.05)
-    path1 = Path_plan.plan_path(conf7, conf6, 0.1)
-    smooth1 = Path_plan.smooth_two_path(path0, path1, step=0.05)
-    # 展示路径
-    rbt_mesh = None
-    for jnts1 in smooth1:
-        rbt_s.fk("arm", jnts1)  ## 用正运动学（fk）更新机器人姿态
-        rbt_mesh = rbt_s.gen_meshmodel(rgba=[0, 1, 0, 0.5])
-        rbt_mesh.attach_to(base)
-    print(smooth1)
+    # path0 = Path_plan.plan_path(conf4,conf7,0.05)
+    # path1 = Path_plan.plan_path(conf7, conf6, 0.1)
+    # smooth1 = Path_plan.smooth_two_path(path0, path1, step=0.05)
+    # # 展示路径
+    # rbt_mesh = None
+    # for jnts1 in smooth1:
+    #     rbt_s.fk("arm", jnts1)  ## 用正运动学（fk）更新机器人姿态
+    #     rbt_mesh = rbt_s.gen_meshmodel(rgba=[0, 1, 0, 0.5])
+    #     rbt_mesh.attach_to(base)
+    # print(smooth1)
 
     # 从丢弃点到抓取低点
     # path1 = Path_plan.plan_path(conf6, conf8,0.1)   # 先到回来的抓取高点

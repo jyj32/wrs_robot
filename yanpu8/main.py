@@ -91,8 +91,8 @@ def process_image_and_pointcloud(color_image_0, pcb_image_0, grasp_success_0, ma
         # 0.图片中箱子外面涂黑
         # 创建全黑背景图（与原图尺寸相同）
         box_image = np.zeros_like(color_image_0)  # 全黑
-        # 将箱子框内区域复制到黑图上，中心坐标（宽1000，高475）
-        box_image[0:950, 300:1700] = color_image_0[0:950, 300:1700]
+        # 将箱子框内区域复制到黑图上，中心坐标（宽1020，高500）
+        box_image[50:950, 340:1700] = color_image_0[50:950, 340:1700]
         # 1.yolo实例分割，输出掩码的路径
         print("yolo实例分割")
         cls_id_1, mask, mask_center_1, cropped_image  = Mech_seg_model.seg_objs_by_yolo_2(
@@ -113,7 +113,7 @@ def process_image_and_pointcloud(color_image_0, pcb_image_0, grasp_success_0, ma
             angle_1 = 0
             # 3. ICP配准
             print("进行ICP配准...")
-            # 使用包围盒中心对齐，只平移不旋转
+            # 使用包围盒中心对齐，平移且旋转，输出平移矩阵
             point_cam = icp.simple_icp_with_scale_fix(
                 ply=cropped_pcd, ply_path=Mech_ply_path, stl_path=STL1_PATH, manual_scale=1,
                 use_cluster_center=True, use_bbox_center=True,
@@ -128,7 +128,7 @@ def process_image_and_pointcloud(color_image_0, pcb_image_0, grasp_success_0, ma
                 angle_1 = 0
             # ICP配准
             print("进行ICP配准...")
-            # 使用包围盒中心对齐，只平移不旋转
+            # 使用包围盒中心对齐，平移且旋转，输出平移矩阵
             point_cam = icp.simple_icp_with_scale_fix(
                 ply=cropped_pcd, ply_path=Mech_ply_path, stl_path=STL_PATH, manual_scale=1,
                 use_cluster_center=True, use_bbox_center=True,
@@ -148,7 +148,7 @@ def process_image_and_pointcloud(color_image_0, pcb_image_0, grasp_success_0, ma
         # points_world_hom = (T_cam_to_world @ points_hom.T).T  # 得到 (N, 4),.T表示转置
         # pos_1 = points_world_hom[0, :3]
 
-        pos_1 += np.array([-0.0038, -0.005, 0])    # 位置补偿
+        pos_1 += np.array([-0.002, -0.0015, 0])    # 位置补偿
         # print(f"抓取位置矩阵pos_1: {pos_1}")
         if cls_id_1 == 1: # 检测到正面,比反面抓取更低
             pos_1 += np.array([0, 0, -0.005])
@@ -260,7 +260,7 @@ def thread_robot(loop_count_0):
                 else:   # 不吸盘
                     # 如果队列里是None，表示没有检测到掩码
                     if Mech_grasp_result is None:
-                        print("[机器人线程] 梅卡曼德线程计算失败,但还可以抓取U625")
+                        print("[机器人线程] 获取到梅卡曼德线程计算结果为空")
                         U1_End = True
                         # 回到等待位置
                         move_to_point(rbt_r, Path_plan, wait_conf, fast_v, fast_a, slow_v, slow_a)
@@ -281,7 +281,7 @@ def thread_robot(loop_count_0):
                             U1_approach_path = U1_grasp_and_place_path["app"]
                         else:   # 当前在U625的放置高点
                             # 合并U625放置返回路径和U1抓取路径,平滑处理,用时0.02s左右
-                            U1_approach_path = Path_plan.smooth_two_path(CONFIG_U625['place']['back_path'], U1_grasp_and_place_path["app"], 0.1)
+                            U1_approach_path = Path_plan.smooth_two_path(CONFIG_U625['place']['back_path'], U1_grasp_and_place_path["app"], 0.15)
                         # 执行接近路径
                         rbt_r.move_jnts(U1_approach_path[0],slow_v,slow_a) # 保险起见
                         rbt_r.move_jntspace_path(
@@ -309,7 +309,7 @@ def thread_robot(loop_count_0):
                         rbt_r.moveL(grasp_pose,slow_v,slow_a)
                         # time.sleep(20)
                         # 力控下移抓取
-                        ForceControl.move(1)
+                        ForceControl.move(time1 = 0.3, timeout=1, force = -10)
                         # 抓取
                         print("手爪抓取")
                         gripper_target.put((80,50))  # 异步，不等待
@@ -328,12 +328,17 @@ def thread_robot(loop_count_0):
                             U1_grasp_success = True if 40 < width < 70 else False  # 抓住时在50左右
                         if not U1_grasp_success:    # 抓取失败
                             # gripper_r.close_g()  # 手爪闭合
+                            # 上移2mm
+                            rbt_r.moveL(grasp_pose+np.array([0,0,0.002,0,0,0]), slow_v, slow_a)
+                            # 闭合
                             gripper_target.put(0)  # 异步，不等待
+                            # 同时下移回抓取点
+                            rbt_r.moveL(grasp_pose, slow_v, slow_a)
                             gripper_ready_event.wait()
                             gripper_ready_event.clear()
-                            print("手爪完全闭合")
+                            print("手爪闭合")
                             # 力控下移抓取
-                            ForceControl.move(1)
+                            ForceControl.move(time1 = 0.5, timeout=1.2, force = -10)
                             # 第二次抓取
                             print("手爪第二次抓取U1")
                             gripper_target.put(80)  # 异步，不等待
@@ -341,7 +346,7 @@ def thread_robot(loop_count_0):
                             gripper_ready_event.clear()
                         # 上升路径
                         print("moveL到抓取低位")
-                        rbt_r.moveL(low_grasp_pose-np.array([0,0,0.002,0,0,0]), slow_v, slow_a)    # 上移到抓取低点下面3mm处，避免运动到高于实际抓取低点的点
+                        rbt_r.moveL(low_grasp_pose-np.array([0,0,0.001,0,0,0]), slow_v, slow_a)    # 上移到抓取低点下面3mm处，避免运动到高于实际抓取低点的点
                         # 检测是否抓取成功，必须在梅卡曼德相机线程计算前
                         gripper_target.put(80)  # 异步，不等待
                         gripper_ready_event.wait()
@@ -392,7 +397,6 @@ def thread_robot(loop_count_0):
                                 )
                                 # 松手
                                 for _ in range(2):
-                                    # gripper_r.close_g()
                                     gripper_target.put(0)  # 异步，不等待
                                     gripper_ready_event.wait()  # 等待手爪动作完成
                                     gripper_ready_event.clear()  # 复位
@@ -402,7 +406,6 @@ def thread_robot(loop_count_0):
                                     width = gripper_current_width
                                     if width <= 5:
                                         break
-                                    # gripper_r.open_g()
                                     gripper_target.put(100)  # 异步，不等待
                                     gripper_ready_event.wait()  # 等待手爪动作完成
                                     gripper_ready_event.clear()  # 复位
@@ -450,6 +453,7 @@ def thread_robot(loop_count_0):
                                         return
                                     time.sleep(1)
                                     print("U625放置区域有物体")
+                                print(f"检测U1放置区域用时{time.time()-camera_detect_time}")
 
                                 rbt_r.move_jntspace_path(
                                     path=U1_grasp_and_place_path["place"],
@@ -487,7 +491,7 @@ def thread_robot(loop_count_0):
             try:
                 D435_result = D435_queue.get(timeout=30.0)
             except queue.Empty:
-                print(f"等待相机处理结果超时，可能相机线程已出错,还可以抓取U1")
+                print(f"等待相机处理结果超时")
                 D435_result = None
                 U625_End = True
                 # 回到等待点
@@ -509,9 +513,7 @@ def thread_robot(loop_count_0):
                     # path_down = D435_result
                     print("开始U625吸盘操作")
                     print(f"U625层数：{U625_layer_num}")
-                    # gripper_r.set_force(100)
                     # 手爪打开
-                    # gripper_r.jaw_to(100)
                     gripper_target.put((100,100))  # 异步，不等待
                     gripper_ready_event.wait()  # 等待手爪动作完成
                     gripper_ready_event.clear()  # 复位
@@ -571,7 +573,7 @@ def thread_robot(loop_count_0):
                     rbt_r.moveL(U625_grasp_pose, slow_v, slow_a)
                     # time.sleep(20)
                     # 张开手爪，抓取
-                    gripper_target.put((80,25))  # 异步，不等待
+                    gripper_target.put((80,30))  # 异步，不等待
                     gripper_ready_event.wait()  # 等待手爪动作完成
                     gripper_ready_event.clear()  # 复位
                     gripper_target.put('width')
@@ -583,17 +585,27 @@ def thread_robot(loop_count_0):
                     U625_grasp_success = True if 25 < width < 70 else False  # 抓住时在 38 左右
                     if not U625_grasp_success:  # 没抓住，重新抓一遍
                         print("没抓住U625，重新抓")
+                        # 上移3mm...、
+                        rbt_r.moveL(U625_grasp_pose +np.array([0,0,0.003,0,0,0]), slow_v, slow_a)
+                        # 闭合
                         gripper_target.put(0)  # 异步，不等待
+                        rbt_r.moveL(U625_grasp_pose , slow_v, slow_a)   # 再回去
                         gripper_ready_event.wait()  # 等待手爪动作完成
                         gripper_ready_event.clear()  # 复位
-                        ForceControl.move(1)    # 力控下移
+                        FC_time = ForceControl.move(0.3,1, force = -10)    # 力控下移
+                        if FC_time<=1: # 碰到底部
+                            ForceControl.move(0.3,0,10)  # 力控上移一点
                         gripper_target.put(80)  # 异步，不等待
                         gripper_ready_event.wait()  # 等待手爪动作完成
                         gripper_ready_event.clear()  # 复位
-                    # 到抓取低点下面3mm处,竖直向上,moveL
-                    rbt_r.moveL(U625_low_grasp_pose-np.array([0,0,0.002,0,0,0]), slow_v, slow_a)
+                        rbt_r.moveL(U625_grasp_pose, slow_v, slow_a)
+                    else:   # 抓住了
+                        # 上来一点点3mm
+                        rbt_r.moveL(U625_grasp_pose+np.array([0,0,0.003,0,0,0]), slow_v, slow_a)
                     # 判断是否抓住
                     gripper_target.put(80)  # 异步，不等待
+                    # 到抓取低点下面1mm处(但不低于抓取点),竖直向上,moveL
+                    rbt_r.moveL(U625_low_grasp_pose - np.array([0, 0, 0.001, 0, 0, 0]), slow_v, slow_a)
                     gripper_ready_event.wait()  # 等待手爪动作完成
                     gripper_ready_event.clear()  # 复位
                     gripper_target.put('width')
@@ -601,6 +613,7 @@ def thread_robot(loop_count_0):
                     gripper_ready_event.clear()  # 复位
                     width = gripper_current_width
                     print(f"U625手爪宽度:{width}")
+
                     U625_grasp_success = True if 25 < width < 70 else False  # 抓住时在 38 左右
                     if not U625_grasp_success:  # 没抓住
                         print("没抓住U625，回到等待点，需要重新抓U625，结束当前循环")
@@ -622,7 +635,7 @@ def thread_robot(loop_count_0):
                             # 相机拍摄RGB图
                             rgb_image = D435_2.capture_rgb(delay=0.1, show=False, save=False)
                             if not U625_detect_model.detect_exist_U625(
-                                    rgb_image, x_range=(450, 640), y_range=(0, 150), save=False, show=False):
+                                    rgb_image, x_range=(470,600), y_range=(50,180), save=False, show=False):
                                 print("检测到放置区域无U1，可以放置")
                                 break
                             if time.time() - camera_detect_time2 > 30:
@@ -631,6 +644,7 @@ def thread_robot(loop_count_0):
                                 return
                             time.sleep(1)
                             print("U625放置区域有物体")
+                        print(f"U625检测放置区域用时{time.time() - camera_detect_time2}")
 
                         rbt_r.move_jntspace_path(path=place_path, interval_time=1.0, control_frequency=.002,
                                                  vel=fast_v, acc=fast_a,
@@ -672,7 +686,6 @@ def Mech_thread(loop_count_0):
         grasp_success_0 = U1_grasp_success # 获取最新的U1抓取信息
         # 采集新数据
         start_time = time.time()
-
         color_image_0, depth_image_0 = cameraclient.capture()  # 多进程拍摄（大约1.3s）
         if color_image_0 is None:
             clear_queue(Mech_queue)  # 清空grasp_queue队列
@@ -686,8 +699,9 @@ def Mech_thread(loop_count_0):
             Mech_queue.put(None)  # 放入None表示没有结果
             End = True  # 设置结束标志为True
             return
-        has_mask_0, cls_id_0, pos_0, new_mask_center, angle_0 = process_image_and_pointcloud(color_image_0, pcb_image_0, grasp_success_0, Mech_mask_center)
-        print(f"梅卡曼德数据采集与处理总时间：{time.time()-start_time}")
+        has_mask_0, cls_id_0, pos_0, new_mask_center, angle_0 = process_image_and_pointcloud(
+            color_image_0, pcb_image_0, grasp_success_0, Mech_mask_center
+        )
         # 如果没有检测到掩码，发送吸盘信号
         if not has_mask_0:
             print(f"[相机线程] 第 {loop_count_0} 次循环没有检测到掩码，执行吸盘操作")
@@ -706,6 +720,8 @@ def Mech_thread(loop_count_0):
                 print(f"在第3层 (高度: {U1_cardboard_height:.3f}m)")
                 print("U1抓取完毕，抓取程序结束")
                 End = True
+                clear_queue(Mech_queue)  # 清空result_queue队列
+                Mech_queue.put(None)
                 return
             U1_need_vacuum_clean = True
             clear_queue(Mech_queue)  # 清空result_queue队列
@@ -718,13 +734,14 @@ def Mech_thread(loop_count_0):
         # 计算抓取路径
         # 最终物体位置
         if not grasp_success_0:   # 前一个物体抓取失败
-            print("没有抓住")
+            print("U1之前没有抓住")
             U1_pick_height -= U1_change_pick_height  # 抓取高度降低
         else:
-            print("抓住了")
+            print("U1之前抓住了")
             U1_pick_height = CONFIG_U1['grasp']['pick_height']  # 抓取高度恢复
         # 修正物体位置
         U1_pos_0 = pos_0 + np.array([0, 0, U1_pick_height])
+        print(f"U1最终位置{U1_pos_0}")
         # 抓取角度和路径,每次都从等待点出发
         if angle_0 is None:
             angle_0 = 0
@@ -762,7 +779,7 @@ def D435_thread(loop_count_1):
         # 创建全黑背景图（与原图尺寸相同）
         U625_box_image = np.zeros_like(color_image)  # 全黑
         # 将箱子框内区域复制到黑图上，中心坐标（宽325，高245）
-        U625_box_image[100:390, 110:540] =color_image[100:390, 110:540]
+        U625_box_image[105:385, 125:525] =color_image[105:385, 125:525]
         # yolo检测, 生成掩码
         D435_last_point = D435_mask_center  # 上次的掩码中心
         mask , D435_mask_center = D435_seg_model.detect_and_save_masks(
@@ -787,6 +804,8 @@ def D435_thread(loop_count_1):
                 U625_layer_num = 3  # 0.86左右，0.884,0.88
                 print(f"在第3层 (高度: {U625_cardboard_height:.3f}m)")
                 End = True  # U625抓取完毕
+                clear_queue(D435_queue)  # 清空result_queue队列
+                D435_queue.put(None)
                 print("U625抓取完毕，抓取程序结束")
                 return
 
@@ -802,7 +821,6 @@ def D435_thread(loop_count_1):
         return
     # 有检测到物体
     U625_need_vacuum_clean = False  # 吸盘标志复位。如果吸取失败则一直吸取。
-
     # 点云裁剪
     U625_cropped_pcd = mask_cropper.main(
         ply_data = D435_pcb,
@@ -812,15 +830,18 @@ def D435_thread(loop_count_1):
         show = False,
     )
     # icp匹配
-    U1_transformation, scale_factor = icp.run_rotation_only_icp(U625_cropped_pcd, None, STL625_PATH,
-                                                                            manual_scale=1,
-                                                                            use_cluster_center=True,
-                                                                            use_bbox_center=True,
-                                                                            eps=0.02,
-                                                                            min_samples=30,
-                                                                            show = False)   # 是否展示
+    U625_transformation, scale_factor = icp.run_rotation_only_icp(
+        U625_cropped_pcd, None, STL625_PATH,
+        manual_scale=1,
+        use_cluster_center=True,
+        use_bbox_center=True,
+        eps=0.02,
+        min_samples=30,
+        show = False,   # 是否展示
+      save = False  # 是否保存结果信息
+      )
     # 物体位置
-    U625_pos0 = U1_transformation[:3, 3]
+    U625_pos0 = U625_transformation[:3, 3]
     U625_pos1 = D435_1.cam_to_world(U625_pos0, CONFIG_U625['T_cam_to_world']) + np.array([0.008, -0.015, 0])  # 位置补偿
     # 最终位置
     if not grasp_success_1:  # 前一个物体抓取失败
@@ -950,7 +971,7 @@ if __name__ == '__main__':
     # 5. Yolo模型
     Mech_seg_model = YOLO.YOLODetector_objs(yolo_path=Mech_seg_path, save_dir= Mech_save_dir)  # 梅卡曼德分割
     far_angle_model = YOLO.YOLODetector_angle(yolo_path=Mech_angle_path, save_dir= Mech_save_dir)  # 梅卡曼德角度
-    D435_seg_model = YOLO.YOLOToMask(model_path=D435_seg_path, save_dir= D435_save_dir)  # D435分割
+    D435_seg_model = YOLO.YOLOToMask(model_path=D435_seg_path, save_dir= D435_save_dir,conf_threshold=0.7)  # D435分割
     U1_detect_model = YOLO.YOLO_detect_exist_U1(yolo_path=U1_in_place_path, save_dir= D435_save_dir)    # 检测有无U1
     U625_detect_model = YOLO.YOLO_detect_exist_U625(yolo_path=U625_in_place_path, save_dir=D435_save_dir)   # 检测有无U625
     # 6. 点云裁剪模块
@@ -1042,11 +1063,11 @@ if __name__ == '__main__':
             sys.exit(1) # 程序终止
         current_conf = rbt_r.get_jnt_values()   # 当前关节点
         if (current_conf != wait_conf).any():   # 移动到等待位置
-            start_path = Path_plan.plan_path(current_conf, wait_conf)
+            start_path = Path_plan.plan_path(current_conf, wait_conf,0.1)
             if rbt_sim: # 仿真检查
                 robot_mesh = robot_simulation(start_path, [0, 1, 0, 1])
                 # base.run()
-            if len(start_path) > 5:
+            if start_path is not None and len(start_path) > 5:
                 rbt_r.move_jnts(start_path[0], 0.1, 0.1)    # 到初始点，保险起见
                 rbt_r.move_jntspace_path(
                     path=start_path,
@@ -1139,5 +1160,5 @@ if __name__ == '__main__':
     # 结束灯
     rbt_r.red_lamp()
     rbt_s.show_cdprimit()  # 机器人展示碰撞体
-    base.run()
+    # base.run()
 
