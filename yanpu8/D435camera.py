@@ -697,22 +697,22 @@ if __name__ == "__main__":
     #     print(f"深度图像尺寸: {depth_img.shape}")
     #
 
-    ply_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435\pointcloud_20260527-140547.ply"
-    if ply_path is not None:
-        print(f"PLY文件路径: {ply_path}")
-        print(f"文件存在: {os.path.exists(ply_path)}")
-
-        # 加载点云并分析
-        if os.path.exists(ply_path):
-            pcd = o3d.io.read_point_cloud(ply_path)
-            D435_1.analyze_pointcloud_distribution(pcd)
-
-            # 可视化点云
-            o3d.visualization.draw_geometries([pcd],
-                                              window_name=f"Point Cloud with Invalid Points",
-                                              width=800,
-                                              height=600,
-                                              point_show_normal=False)
+    # ply_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435\pointcloud_20260527-140547.ply"
+    # if ply_path is not None:
+    #     print(f"PLY文件路径: {ply_path}")
+    #     print(f"文件存在: {os.path.exists(ply_path)}")
+    #
+    #     # 加载点云并分析
+    #     if os.path.exists(ply_path):
+    #         pcd = o3d.io.read_point_cloud(ply_path)
+    #         D435_1.analyze_pointcloud_distribution(pcd)
+    #
+    #         # 可视化点云
+    #         o3d.visualization.draw_geometries([pcd],
+    #                                           window_name=f"Point Cloud with Invalid Points",
+    #                                           width=800,
+    #                                           height=600,
+    #                                           point_show_normal=False)
 
     # 测试纸板在第几层
     # 拍摄图片

@@ -378,9 +378,9 @@ if __name__ == '__main__':
         # RGB_image, Depth_image, ply_file = Mech_camera.capture_and_generate_pointcloud(save=True,show=True)
     # Mech_camera.camera.disconnect()    # 相机关闭
 
-    # # 检查纸板高度
-    RGB_image, Depth_image, ply_file = Mech_camera.capture_and_generate_pointcloud(save=True,pcb_out_path=r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\Mech\pointcloud.ply",
-                                                                                   show=True)
+    # # # 检查纸板高度
+    # RGB_image, Depth_image, ply_file = Mech_camera.capture_and_generate_pointcloud(save=True,pcb_out_path=r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\Mech\pointcloud.ply",
+    #                                                                                show=True)
     # U1_cardboard_height = Mech_camera.mean_depth_in_xy_range(ply_file, [-0.1,0.1], [-0.2,0.2], CONFIG_U1['T_cam_to_world'])
     # print(f"U1纸板高度:{U1_cardboard_height}")
     # # 比较纸板高度判断在第几层,很可能会错
@@ -394,9 +394,9 @@ if __name__ == '__main__':
 # 第1层:0.8197817374550582,0.8197932344289134,0.8190690742067668
 # 第2层:0.7898642862660914，0.7898614709504399,0.7899270439102384
 # 第3层:0.7612091165018531，0.7612132139379615，0.7612382838261373
-#     pcd_path = r'E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\Mech\pointcloud.ply'
-#     pcd = o3d.io.read_point_cloud(pcd_path)
-#     pcd = o3d.visualization.draw_geometries([pcd],    # type: ignore
-#                                                       width=800,
-#                                                       height=600,
-#                                                       point_show_normal=False)
+    pcd_path = r'E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\Mech\pointcloud.ply'
+    pcd = o3d.io.read_point_cloud(pcd_path)
+    pcd = o3d.visualization.draw_geometries([pcd],    # type: ignore
+                                                      width=800,
+                                                      height=600,
+                                                      point_show_normal=False)

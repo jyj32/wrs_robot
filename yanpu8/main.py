@@ -203,9 +203,9 @@ def thread_robot(loop_count_0):
     global U1_need_vacuum_clean, U625_need_vacuum_clean, current_point
     global End, U1_End, U625_End  # 结束标志
     fast_v = 2
-    slow_v = 0.2
+    slow_v = 0.3
     fast_a = 2
-    slow_a = 0.2
+    slow_a = 0.3
     try:
         if End:
             prepare_Mech_camera.set()  # 相机线程避免一直等待
@@ -309,7 +309,7 @@ def thread_robot(loop_count_0):
                         rbt_r.moveL(grasp_pose,slow_v,slow_a)
                         # time.sleep(20)
                         # 力控下移抓取
-                        ForceControl.move(time1 = 0.3, timeout=1, force = -10)
+                        ForceControl.move(time1 = 0.3, timeout=0.8, force = -10)
                         # 抓取
                         print("手爪抓取")
                         gripper_target.put((80,50))  # 异步，不等待
@@ -322,7 +322,7 @@ def thread_robot(loop_count_0):
                         width = gripper_current_width   # 手爪当前宽度
                         if U1_cls_id == 0:  # 倒放物体
                             print(f"U1倒放物体，手爪宽度:{width}")
-                            U1_grasp_success = True if 10 < width < 70 else False  # 抓住时在36左右
+                            U1_grasp_success = True if 20 < width < 60 else False  # 抓住时在36左右
                         else:  # 正放物体
                             print(f"U1正放物体，手爪宽度:{width}")
                             U1_grasp_success = True if 40 < width < 70 else False  # 抓住时在50左右
@@ -338,7 +338,7 @@ def thread_robot(loop_count_0):
                             gripper_ready_event.clear()
                             print("手爪闭合")
                             # 力控下移抓取
-                            ForceControl.move(time1 = 0.5, timeout=1.2, force = -10)
+                            ForceControl.move(time1 = 0.5, timeout=0.8, force = -10)
                             # 第二次抓取
                             print("手爪第二次抓取U1")
                             gripper_target.put(80)  # 异步，不等待
@@ -357,7 +357,7 @@ def thread_robot(loop_count_0):
                         width = gripper_current_width  # 手爪当前宽度
                         if U1_cls_id == 0: # 倒放物体
                             print(f"U1倒放物体，手爪宽度:{width}")
-                            U1_grasp_success = True if 10<width<70 else False  # 抓住时在36左右
+                            U1_grasp_success = True if 20<width<60 else False  # 抓住时在36左右
                         else:   # 正放物体
                             print(f"U1正放物体，手爪宽度:{width}")
                             U1_grasp_success = True if 40<width<70 else False  # 抓住时在50左右
@@ -448,7 +448,7 @@ def thread_robot(loop_count_0):
                                         print("检测到放置区域无U1，可以放置")
                                         break
                                     if time.time() - camera_detect_time > 30:
-                                        End = False
+                                        End = True
                                         print("等待物体放置超时，程序结束")
                                         return
                                     time.sleep(1)
@@ -582,7 +582,7 @@ def thread_robot(loop_count_0):
                     # 检查手爪宽度
                     width = gripper_current_width
                     print(f"U625手爪宽度:{width}")
-                    U625_grasp_success = True if 25 < width < 70 else False  # 抓住时在 38 左右
+                    U625_grasp_success = True if 25 < width < 65 else False  # 抓住时在 38 左右
                     if not U625_grasp_success:  # 没抓住，重新抓一遍
                         print("没抓住U625，重新抓")
                         # 上移3mm...、
@@ -594,7 +594,7 @@ def thread_robot(loop_count_0):
                         gripper_ready_event.clear()  # 复位
                         FC_time = ForceControl.move(0.3,1, force = -10)    # 力控下移
                         if FC_time<=1: # 碰到底部
-                            ForceControl.move(0.3,0,10)  # 力控上移一点
+                            ForceControl.move(0.25,0,10)  # 力控上移一点
                         gripper_target.put(80)  # 异步，不等待
                         gripper_ready_event.wait()  # 等待手爪动作完成
                         gripper_ready_event.clear()  # 复位
@@ -614,7 +614,7 @@ def thread_robot(loop_count_0):
                     width = gripper_current_width
                     print(f"U625手爪宽度:{width}")
 
-                    U625_grasp_success = True if 25 < width < 70 else False  # 抓住时在 38 左右
+                    U625_grasp_success = True if 25 < width < 65 else False  # 抓住时在 38 左右
                     if not U625_grasp_success:  # 没抓住
                         print("没抓住U625，回到等待点，需要重新抓U625，结束当前循环")
                         back_path1 = U625_approach_path[::-1]
@@ -635,11 +635,11 @@ def thread_robot(loop_count_0):
                             # 相机拍摄RGB图
                             rgb_image = D435_2.capture_rgb(delay=0.1, show=False, save=False)
                             if not U625_detect_model.detect_exist_U625(
-                                    rgb_image, x_range=(470,600), y_range=(50,180), save=False, show=False):
+                                    rgb_image, x_range=(470,600), y_range=(50,150), save=False, show=False):
                                 print("检测到放置区域无U1，可以放置")
                                 break
                             if time.time() - camera_detect_time2 > 30:
-                                End = False
+                                End = True
                                 print("等待物体放置超时，程序结束")
                                 return
                             time.sleep(1)
@@ -891,7 +891,7 @@ if __name__ == '__main__':
     # ==================== 模式设置 =======================
     move_rbt = True   # 是否连接真实机器人
     camera_detect = False   # 是否只拍照
-    rbt_sim = False  # 是否开启仿真
+    rbt_sim = True  # 是否开启仿真
     test = False  # 测试程序
     # ==================== 物体总层数 =======================
     U1_total_layer_num = 3
@@ -956,7 +956,6 @@ if __name__ == '__main__':
     # rbt_s.gen_meshmodel().attach_to(base)
     # 2. 障碍物模型
     obstacle_list = rbt_s.get_obstacle_list(base,False)
-
     # 3. 机器人模块
     print("初始化机器人模块...")
     rbt_r = ur7con.UR5Ag95X_RTDE(
@@ -1034,7 +1033,6 @@ if __name__ == '__main__':
     if rbt_sim: # 是否开启仿真
         # 展示碰撞体
         rbt_s.show_cdprimit()
-
         if not move_rbt:    # 只仿真，机器人不动
             jnts = np.array([1.6853, - 1.1569, 1.7564, - 2.1702, - 1.5708, 1.9535])
             rbt_s.fk("arm", jnts)

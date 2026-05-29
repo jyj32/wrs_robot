@@ -12,9 +12,13 @@ import copy
 import modeling.geometric_model as gm
 import robot_sim.manipulators.machinetool.machinetool_gripper as machine
 import basis.robot_math as rm
+from grasp_fasten.config import CONFIG
 from trac_ik import TracIK
 from typing import Literal
 from scipy.spatial.transform import Rotation as Rot
+
+from yanpu_ur8.config import CONFIG_U1
+
 
 class UR7E(ri.RobotInterface):
 
@@ -275,18 +279,27 @@ class UR7E(ri.RobotInterface):
             r"E:\py_project\wrsrobot\wrs_shu\robot_sim\robots\ur7e\object\fence.STL",
             cdprimit_type="box", expand_radius=.001
         )
-        fence1_pos = np.array([1.2, 0, 0])
+        fence1_pos = np.array([1.5, 0, 0])
         fence1.set_pos(fence1_pos)
         fence1.set_rotmat(rm.rotmat_from_euler(0, 0, 0))
-        fence1.set_rgba([1, 1, 1, 0.01])  # 例如：完全透明
+        fence1.set_rgba([1, 1, 1, 0.1])  # 例如：完全透明
         fence2 = cm.CollisionModel(
             r"E:\py_project\wrsrobot\wrs_shu\robot_sim\robots\ur7e\object\fence.STL",
             cdprimit_type="box", expand_radius=.001
         )
-        fence2_pos = np.array([0.8, 0.7, 0])
+        fence2_pos = np.array([1, 1, 0])
         fence2.set_pos(fence2_pos)
         fence2.set_rotmat(rm.rotmat_from_euler(0, 0, math.pi / 2))
-        fence2.set_rgba([1, 1, 1, 0.01])  # 例如：完全透明
+        fence2.set_rgba([1, 1, 1, 0.1])  # 例如：完全透明
+        # 机器人上面
+        fence3 = cm.CollisionModel(
+            r"E:\py_project\wrsrobot\wrs_shu\robot_sim\robots\ur7e\object\fence.STL",
+            cdprimit_type="box", expand_radius=.001
+        )
+        fence3_pos = np.array([0, 0.5, 1.7])
+        fence3.set_pos(fence3_pos)
+        fence3.set_rotmat(rm.rotmat_from_euler(0, math.pi / 2, 0))
+        fence3.set_rgba([1, 1, 1, 0.1])  # 例如：完全透明
         # 所有物体模型
         all_machine = [machine,
                        collections1,
@@ -301,7 +314,7 @@ class UR7E(ri.RobotInterface):
                        box2_collections1, box2_collections2, box2_collections3,box2_collections4,
                        box2_collections5,
                        xipan,
-                       fence1,fence2
+                       fence1,fence2,fence3
                        ]
         for obstacle in all_machine:
             obstacle.attach_to(base0)
@@ -312,7 +325,7 @@ class UR7E(ri.RobotInterface):
                        box2_collections1, box2_collections2, box2_collections3,box2_collections4,
                          box2_collections5,
                         xipan,
-                         fence1,fence2
+                         fence1,fence2,fence3
                          ]
         if show_collision:  # 展示碰撞体
             for obstacle in obstacle_list:
@@ -353,7 +366,7 @@ class UR7E(ri.RobotInterface):
         intolist1 = [self.hnd.lft.lnks[0],
                     self.hnd.lft.lnks[1],
                     self.hnd.rgt.lnks[1]]
-        # self.cc.set_cdpair(fromlist1, intolist1)  # 设置碰撞检测对
+        self.cc.set_cdpair(fromlist1, intolist1)  # 设置碰撞检测对
 
         for oih_info in self.oih_infos:
             objcm = oih_info['collision_model']
@@ -585,14 +598,14 @@ class UR7E(ri.RobotInterface):
         return meshmodel
 
     def get_real_tcp_pose(self, tgt_pos, tgt_rotmat):
-        '''
+        """
         根据手爪中心在仿真中的位置和旋转矩阵计算出机器人的实际tcp_pose
         输入:
             tgt_pos:仿真中的目标（手爪中心）位置
             tgt_rotmat:仿真中的目标（手爪中心）旋转矩阵
         输出:
             real_tcp_pose:实际的TCP_pose
-        '''
+        """
         # 仿真中齐次变换矩阵
         T_base_world = rm.homomat_from_posrot(self.arm_pos, self.arm_rotmat)  # 基座→世界
         T_world_base = np.linalg.inv(T_base_world)  # 世界→基座
@@ -653,6 +666,31 @@ class UR7E(ri.RobotInterface):
         real_tcp_pose = np.concatenate([tcp_pos_real, rotvec_real])  # shape (6,)
         return real_tcp_pose
 
+    def get_pos_and_rot_from_conf(self, conf):
+        """
+        根据关节角度获取手爪中心在世界坐标系下的位置和旋转矩阵
+        :param conf: 6个关节角度 (rad)
+        :return: (pos, rotmat) 世界坐标系下的位置 (3,) 和旋转矩阵 (3,3)
+        """
+        self.fk(component_name='arm', jnt_values=conf)
+
+        # 末端法兰盘的全局位姿
+        flange_pos = self.arm.jnts[-1]['gl_posq']
+        flange_rot = self.arm.jnts[-1]['gl_rotmatq']
+
+        # TCP 局部偏移（在 __init__ 中已设置）
+        tcp_loc_pos = self.arm.jlc.tcp_loc_pos  # 例如 [0, 0, 0.16882]
+        tcp_loc_rot = self.arm.jlc.tcp_loc_rotmat  # 通常为单位矩阵
+
+        # 变换到全局坐标系
+        tcp_global_pos = flange_pos + flange_rot @ tcp_loc_pos
+        tcp_global_rot = flange_rot @ tcp_loc_rot
+
+        print("手爪中心位置（世界坐标系）：", list(tcp_global_pos))
+        print("手爪中心旋转矩阵（世界坐标系）：\n", tcp_global_rot)
+        return tcp_global_pos, tcp_global_rot
+
+
 if __name__ == '__main__':
     import time
     import basis.robot_math as rm
@@ -662,7 +700,7 @@ if __name__ == '__main__':
     gm.gen_frame().attach_to(base)
     robot_s = UR7E(pos=np.array([0.7, 0.2, 0.7]), rotmat=rm.rotmat_from_axangle(np.array([0, 0, 1]), math.pi),
                      enable_cc=True)  # 仿真机器人
-    # robot_s.gen_meshmodel().attach_to(base)
+    robot_s.gen_meshmodel().attach_to(base)
     # robot_s.show_cdprimit()
     # conf = np.array([-0.46189231, - 1.55124523,  1.75405697, - 1.77360785, - 1.57079618, - 3.60348501])
     # robot_s.fk(component_name='arm', jnt_values=conf)
@@ -733,6 +771,8 @@ if __name__ == '__main__':
     # Rotation = Rot.from_matrix(R_sim_to_real)
     # euler = Rotation.as_euler('xyz')
     # print(euler)    # [-9.48082386e-04 -2.40333479e-03 -3.14136550e+00]
+
+
 
 
     base.run()

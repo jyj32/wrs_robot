@@ -825,7 +825,7 @@ class YOLO_detect_exist_U625():  # 检测区域内物体是否存在
         # 将箱子框内区域复制到黑图上，中心坐标（宽1000，高475）
         range_image[y_range[0]:y_range[1], x_range[0]:x_range[1]] = image[y_range[0]:y_range[1], x_range[0]:x_range[1]]
         # 1. 推理图像
-        results = self.yolo_model(range_image, verbose=False, conf=0.7)
+        results = self.yolo_model(range_image, verbose=False, conf=0.83)
         if len(results) == 0 or results[0].boxes is None or results[0].boxes.xyxy.numel() == 0:
             return False
         # 2.获取所有检测框 (xyxy格式: x1, y1, x2, y2)
@@ -852,15 +852,14 @@ class YOLO_detect_exist_U625():  # 检测区域内物体是否存在
                 cv2.imshow("Detection Result", annotated_img)
                 cv2.waitKey(0)
                 cv2.destroyAllWindows()
-        if not exists:
-            # 获取带标注的图像（YOLO的plot方法返回BGR图像）
-            annotated_img = results[0].plot()
-            # 生成唯一文件名
-            timestamp = time.strftime("%Y%m%d-%H%M%S")
-            save_path = os.path.join(self.save_dir, f"detect_U625_in_place{timestamp}.jpg")
-            cv2.imwrite(save_path, annotated_img)
-            print(f"检测结果已保存至: {save_path}")
-
+        # if not exists:
+        #     # 获取带标注的图像（YOLO的plot方法返回BGR图像）
+        #     annotated_img = results[0].plot()
+        #     # 生成唯一文件名
+        #     timestamp = time.strftime("%Y%m%d-%H%M%S")
+        #     save_path = os.path.join(self.save_dir, f"detect_U625_in_place{timestamp}.jpg")
+        #     cv2.imwrite(save_path, annotated_img)
+        #     print(f"检测结果已保存至: {save_path}")
 
         return exists
 
@@ -940,11 +939,16 @@ if __name__ == "__main__":
     # cv2.imwrite(crop_path, box_image)
     # print(f"裁剪图像已保存到: {crop_path}")
 
-    # # 检测U625的分割
-    # image_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435\color_image_20260507-191622.jpg"
-    # image = cv2.imread(image_path)
+    # 检测U625的分割
+    import D435camera as D435
+
+    # save_dir = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435"
+    # D435_1 = D435.D435Detector(camera_type='d435', save_directory=save_dir, camera_serial='241122073898')
+    # image = D435_1.capture_rgb(0.1, True, True)
+    # # image_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435\color_image_20260507-191622.jpg"
+    # # image = cv2.imread(image_path)
     # model_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\yolo_pths\bestutest.pt"
-    #
+
     # # 初始化转换器
     # converter = YOLOToMask(
     #     model_path=model_path,
@@ -953,33 +957,33 @@ if __name__ == "__main__":
     #     save_dir= r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435"
     # )
     # mask, mask_center = converter.detect_and_save_masks(
-    #     image_path=image_path,
+    #     image_path=None,
     #     color_image=image,
-    #     last_point=np.array([350,100]), # 宽，高
+    #     last_point=CONFIG_U625['grasp']['mask_center'], # 宽，高
     #     grasp_success=False, # 是否抓取成功
     #     save=True
     # )
-    # import D435camera as D435
-    #
-    # save_dir = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435"
-    # D435_2 = D435.D435Detector(camera_type='d435', save_directory=save_dir, camera_serial='317222074435')
-    # model_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\yolo_pths\best6.pt"
-    #
-    # U625_detect = YOLO_detect_exist_U625(
-    #     yolo_path=model_path,
-    #     save_dir=r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435"
-    # )
-    # start_time = time.time()
-    # image = D435_2.capture_rgb(0.1, True, True)
-    # # 检测区域内有无物体
-    #     # image_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435\color_image2_20260526-193740.jpg"
-    # # 初始化转换器
-    #
-    # # image = cv2.imread(image_path)
-    # exist = U625_detect.detect_exist_U625(image,(470,600),(50,180),True,True)
-    # print(exist)
-    # print(f"{time.time()-start_time}")
-    #
+    import D435camera as D435
+
+    save_dir = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435"
+    D435_2 = D435.D435Detector(camera_type='d435', save_directory=save_dir, camera_serial='317222074435')
+    model_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\yolo_pths\best6.pt"
+
+    U625_detect = YOLO_detect_exist_U625(
+        yolo_path=model_path,
+        save_dir=r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435"
+    )
+    start_time = time.time()
+    image = D435_2.capture_rgb(0.1, True, True)
+    # 检测区域内有无物体
+    #     image_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435\color_image2_20260526-193740.jpg"
+    # 初始化转换器
+
+    # image = cv2.imread(image_path)
+    exist = U625_detect.detect_exist_U625(image,(470,600),(50,150),True,True)
+    print(exist)
+    print(f"{time.time()-start_time}")
+
     # model_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\yolo_pths\best5.pt"
     # # image_path = r"E:\py_project\wrsrobot\wrs_shu\yanpu_ur8\images\D435\color_image2_20260526-193740.jpg"
     # # 初始化转换器

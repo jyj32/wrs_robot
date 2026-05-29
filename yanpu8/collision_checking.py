@@ -23,7 +23,7 @@ if __name__ == '__main__':
     obstacle_list = ur7e_s.get_obstacle_list(base,True)
 
     # 1.检测某个关节点是否碰撞
-    # jnts = np.array([ 1.3058   ,  -2.0294    ,  2.3042   ,  -1.8457    , -1.5708   ,   1.3058])
+    # jnts = np.array([ 2.6971895077412027, -3.190632673671864, 1.2576356005448501, 0.36220098055745203, -1.5707960937890162, 0.6590745034072273])
     # ur7e_s.fk("arm", jnts)
     # ur7e_s.jaw_to('hnd', 0.02) # 手爪闭合再检测是否碰撞
     # collision_info = ur7e_s.is_collided(obstacle_list)
@@ -34,32 +34,34 @@ if __name__ == '__main__':
     '''
     '''
 
-    # pos_0 = np.array([0.232, 0.75, 1])
-    # # wait_rot = rm.rotmat_from_axangle([0, 1, 0], math.pi)
+    pos_0 = np.array([ 0.8296444230918749, -0.24276065206145675, 1.256209829843713])
+    # wait_rot = rm.rotmat_from_axangle([0, 1, 0], math.pi)
     # wait_rot = np.array([[   -1.0000000e+00 , 0.0000000e+00 , 1.2246468e-16],
     #                      [ 0.0000000e+00 , 1.0000000e+00 , 0.0000000e+00],
     #                      [-1.2246468e-16 , 0.0000000e+00 ,-1.0000000e+00]])
-    #
-    # # pos_0 = CONFIG_U625['grasp']['box_center_pos']
-    # # wait_rot = CONFIG_U1['place']['0']['high_place_rot']
-    # # pos_0 = CONFIG_U1['place']['0']['high_place_pos']
-    # # wait_rot = CONFIG_U1['place']['-60']['place_rot']
-    # # seed = np.array([0.61461222,-1.37349709,1.55544195,-1.75279925,-1.57078562,0.61457421])
-    # # 用于U1的seed
-    # seed = CONFIG_U1['grasp']['box_center_conf']
-    # # 用于U625的seed
-    # # seed = CONFIG_U625['grasp']['box_center_conf']
-    #
-    # jnts = ur7e_s.tracik( tgt_pos=pos_0,
-    #                        tgt_rotmat=wait_rot,
-    #                        seed_jnt_values=seed,
-    #                        solver_type = "Distance"
-    #                       )
-    # print(list(jnts))   # 转换为列表再打印就会带逗号
-    # ur7e_s.fk("arm", jnts)
-    # collision_info = ur7e_s.is_collided(obstacle_list)
-    # print(collision_info)
-    # ur7e_s.gen_meshmodel().attach_to(base)
+    wait_rot = np.array([[  0.02313107 ,-0.9993294 ,  0.02838492],
+                         [-0.83222496 ,-0.03498004 ,-0.55333355],
+                         [ 0.55395539, -0.01082344 ,-0.83247599]])
+    # pos_0 = CONFIG_U625['grasp']['box_center_pos']
+    # wait_rot = CONFIG_U1['place']['0']['high_place_rot']
+    # pos_0 = CONFIG_U1['place']['0']['high_place_pos']
+    # wait_rot = CONFIG_U1['place']['-60']['place_rot']
+    # seed = np.array([0.61461222,-1.37349709,1.55544195,-1.75279925,-1.57078562,0.61457421])
+    # 用于U1的seed
+    seed = CONFIG_U625['grasp']['box_center_conf']
+    # 用于U625的seed
+    # seed = CONFIG_U625['grasp']['box_center_conf']
+
+    jnts = ur7e_s.tracik( tgt_pos=pos_0,
+                           tgt_rotmat=wait_rot,
+                           seed_jnt_values=seed,
+                           solver_type = "Distance"
+                          )
+    print(list(jnts))   # 转换为列表再打印就会带逗号
+    ur7e_s.fk("arm", jnts)
+    collision_info = ur7e_s.is_collided(obstacle_list)
+    print(collision_info)
+    ur7e_s.gen_meshmodel().attach_to(base)
 
     # 3.检测hold是否有用
     # obj_cm = cm.CollisionModel("object/U1_2.STL")
@@ -91,36 +93,36 @@ if __name__ == '__main__':
     # check_jnts = np.array([1.6708  ,  -0.84991   ,   1.1234  ,   -1.8444  ,   -1.5708    ,  1.1845])
 
     # 4.检查路径规划
-    plan_path = pp.Path_plan(ur7e_s,obstacle_list,base)
-    wait_rot = np.dot(
-        rm.rotmat_from_axangle([0, 1, 0], math.pi),
-        rm.rotmat_from_axangle([0, 0, 1], -math.pi / 2)
-    )
+    # plan_path = pp.Path_plan(ur7e_s,obstacle_list,base)
+    # wait_rot = np.dot(
+    #     rm.rotmat_from_axangle([0, 1, 0], math.pi),
+    #     rm.rotmat_from_axangle([0, 0, 1], -math.pi / 2)
+    # )
     # pos_0 = np.array([0.5, 0, 0.13])
     # jnts0 = ur7e_s.ik("arm", pos_0, wait_rot)
     # jnts0 = np.array([    0.61461  ,   -1.3735    ,  1.5554   ,  -1.7528   ,  -1.5708   ,  0.61457])
-    jnts0 = CONFIG_U1['abandon']['abandon_conf']
-
-    ur7e_s.fk("arm", jnts0)
-    collision_info = ur7e_s.is_collided(obstacle_list)
-    print(collision_info)
-    ur7e_s.gen_meshmodel().attach_to(base)
-    # pos_1 = np.array([0.5, -0.25, 0.13])
-    # jnts1 = ur7e_s.ik("arm", pos_1, wait_rot)
-    # jnts1 =np.array([    1.494  ,   -1.2637    ,   1.485    , -1.7922  ,   -1.5708  ,   0.18384])
-    jnts1 = CONFIG_U1['grasp']['wait_conf']
-    ur7e_s.fk("arm", jnts1)
-    collision_info = ur7e_s.is_collided(obstacle_list)
-    print(collision_info)
-    ur7e_s.gen_meshmodel().attach_to(base)
-    path = plan_path.plan_path(jnts0,jnts1,step = 0.1)
-    print(path)
-    # 展示路径
-    rbt_mesh = None
-    for jnts1 in path:
-        ur7e_s.fk("arm", jnts1)  ## 用正运动学（fk）更新机器人姿态
-        rbt_mesh = ur7e_s.gen_meshmodel(rgba=[0,1,0,0.5])
-        rbt_mesh.attach_to(base)
+    # jnts0 = CONFIG_U1['abandon']['abandon_conf']
+    #
+    # ur7e_s.fk("arm", jnts0)
+    # collision_info = ur7e_s.is_collided(obstacle_list)
+    # print(collision_info)
+    # ur7e_s.gen_meshmodel().attach_to(base)
+    # # pos_1 = np.array([0.5, -0.25, 0.13])
+    # # jnts1 = ur7e_s.ik("arm", pos_1, wait_rot)
+    # # jnts1 =np.array([    1.494  ,   -1.2637    ,   1.485    , -1.7922  ,   -1.5708  ,   0.18384])
+    # jnts1 = CONFIG_U1['grasp']['wait_conf']
+    # ur7e_s.fk("arm", jnts1)
+    # collision_info = ur7e_s.is_collided(obstacle_list)
+    # print(collision_info)
+    # ur7e_s.gen_meshmodel().attach_to(base)
+    # path = plan_path.plan_path(jnts0,jnts1,step = 0.1)
+    # print(path)
+    # # 展示路径
+    # rbt_mesh = None
+    # for jnts1 in path:
+    #     ur7e_s.fk("arm", jnts1)  ## 用正运动学（fk）更新机器人姿态
+    #     rbt_mesh = ur7e_s.gen_meshmodel(rgba=[0,1,0,0.5])
+    #     rbt_mesh.attach_to(base)
 
     # 5.抓住物体的路径规划
     # plan_path = pp.Path_plan(ur7e_s,obstacle_list,base)

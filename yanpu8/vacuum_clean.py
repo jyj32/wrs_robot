@@ -81,8 +81,8 @@ class Vacuum_Clean: # 吸盘程序
             # moveL到吸取点
             self.rbt_r.moveL(CONFIG_U1_cc_xipan['vacuum_clean1']['pose5'], slow_v, slow_a)
             # 力控
-            self.Force_Control.move(2)
-            time.sleep(2)
+            self.Force_Control.move(time1=1,timeout=2,force =-10)
+            time.sleep(1)
             # 从点2到点1，离开
             # moveL到箱子低点
             self.rbt_r.moveL(CONFIG_U1_cc_xipan['vacuum_clean1']['pose4'],slow_v,slow_a)
@@ -134,8 +134,8 @@ class Vacuum_Clean: # 吸盘程序
             # moveL到吸取点
             self.rbt_r.moveL(CONFIG_U1_cc_xipan['vacuum_clean2']['pose5'], slow_v, slow_a)
             # 力控
-            self.Force_Control.move(2)
-            time.sleep(2)
+            self.Force_Control.move(time1=1, timeout=2, force=-10)
+            time.sleep(1)
             # 从点2到点1，离开
             # moveL到箱子低点
             self.rbt_r.moveL(CONFIG_U1_cc_xipan['vacuum_clean2']['pose4'], slow_v, slow_a)
@@ -257,8 +257,8 @@ class Vacuum_Clean: # 吸盘程序
             # moveL到吸取点
             self.rbt_r.moveL(CONFIG_U625_cc_xipan['vacuum_clean1']['pose5'], slow_v, slow_a)
             # 力控
-            self.Force_Control.move(2)
-            time.sleep(2)
+            self.Force_Control.move(time1=1, timeout=2, force=-10)
+            time.sleep(1)
             # 从点2到点1，离开
             # moveL到箱子低点
             self.rbt_r.moveL(CONFIG_U625_cc_xipan['vacuum_clean1']['pose4'], slow_v, slow_a)
@@ -310,8 +310,8 @@ class Vacuum_Clean: # 吸盘程序
             # moveL到吸取点
             self.rbt_r.moveL(CONFIG_U625_cc_xipan['vacuum_clean2']['pose5'], slow_v, slow_a)
             # 力控
-            self.Force_Control.move(2)
-            time.sleep(2)
+            self.Force_Control.move(time1=1, timeout=2, force=-10)
+            time.sleep(1)
             # 从点2到点1，离开
             # moveL到箱子低点
             self.rbt_r.moveL(CONFIG_U625_cc_xipan['vacuum_clean2']['pose4'], slow_v, slow_a)
